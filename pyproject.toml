@@ -23,7 +23,7 @@ dependencies = [
     "numpy<2",
     "optax",
     "pandas",
-    "tensorflow_probability@git+https://github.com/tensorflow/probability@50475294912eccc95fc4b79a3742e3786a90a835"
+    "tensorflow_probability@git+https://github.com/tensorflow/probability@50475294912eccc95fc4b79a3742e3786a90a835",
     "xarray",
 ]
 

@@ -248,8 +248,7 @@ class ForecastSystem(nnx.Module, abc.ABC):
   ) -> tuple[ForecastSystem, nnx.State]:
     checkpoint_args = cls.checkpoint_args('restore')
     if checkpointer is None:
-      handler = ocp.CompositeCheckpointHandler(*checkpoint_args.keys())
-      checkpointer = ocp.Checkpointer(handler)
+      checkpointer = ocp.Checkpointer(ocp.CompositeCheckpointHandler())
     restored = checkpointer.restore(
         path, args=ocp.args.Composite(metadata=checkpoint_args.pop('metadata'))
     )

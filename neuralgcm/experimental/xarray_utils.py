@@ -243,8 +243,12 @@ def timed_field_to_xarray(
       ['longitude', 'latitude', 'longitudinal_wavenumber', 'total_wavenumber']
   )
   horizontal_names = horizontal_options.intersection(set(data_dims))
-  if len(horizontal_names) != 2:
-    raise ValueError(f'Expected 2 matches {horizontal_options=} & {data_dims=}')
+  if horizontal_names == set(['longitude', 'latitude']):
+    horizontal_names = ('longitude', 'latitude')
+  elif horizontal_names == set(['longitudinal_wavenumber', 'total_wavenumber']):
+    horizontal_names = ('longitudinal_wavenumber', 'total_wavenumber')
+  else:
+    raise ValueError(f'not recognized {horizontal_names=}')
   horizontal = cx.compose_coordinates(
       *[sample_obs.field.coords[k] for k in horizontal_names]
   )

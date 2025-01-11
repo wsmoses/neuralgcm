@@ -117,6 +117,13 @@ class NamedAxesTest(absltest.TestCase):
     actual = jax.jit(lambda x: x)(array)
     assert_named_array_equal(actual, array)
 
+  def test_grad(self):
+    data = np.arange(6.0).reshape((2, 3))
+    array = named_axes.NamedArray(data, ('x', 'y'))
+    expected = named_axes.NamedArray(jnp.ones_like(data), ('x', 'y'))
+    actual = jax.grad(lambda x: x.data.sum())(array)
+    assert_named_array_equal(actual, expected)
+
   def test_vmap(self):
     data = np.arange(10).reshape((2, 5))
     array = named_axes.NamedArray(data, (None, 'y'))

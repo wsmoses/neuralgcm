@@ -90,6 +90,7 @@ class DynamicInputSlice(DynamicInputModule):
           axis=self.time_axis,
           keepdims=False,
       )
+      # TODO(shoyer): use coordax.cmap instead of unwrapping the field.
       sliced_data = field_index_fn(self.data.value[k])
       outputs[k] = cx.wrap(sliced_data, self.keys_to_coords[k])
     return outputs

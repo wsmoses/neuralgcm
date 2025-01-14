@@ -21,7 +21,6 @@ import jax.numpy as jnp
 from neuralgcm.experimental import coordax as cx
 from neuralgcm.experimental import coordinates
 from neuralgcm.experimental import typing
-import numpy as np
 
 
 @dataclasses.dataclass(frozen=True)
@@ -40,8 +39,10 @@ class SpectralRegridder:
     target_total_wavenumbers = self.target_coords.sizes['total_wavenumber']
     lon_slice = slice(0, target_lon_wavenumbers)
     total_slice = slice(0, target_total_wavenumbers)
-    field = field.untag_prefix('longitude_wavenumber', 'total_wavenumber')
-    result = cx.cmap(lambda x: x[lon_slice, total_slice])(field)
+    field = field.untag('longitude_wavenumber', 'total_wavenumber')
+    result = cx.cmap(
+        lambda x: x[lon_slice, total_slice], field.named_axes
+    )(field)
     return result.tag(self.target_coords)
 
   def pad_to_target_wavenumbers(
@@ -57,9 +58,9 @@ class SpectralRegridder:
     pad_lon = (0, target_lon_k - input_lon_k)
     pad_total = (0, target_total_k - input_total_k)
     pad_fn = lambda x: jnp.pad(x, pad_width=(pad_lon, pad_total))
-    field = field.untag_prefix('longitude_wavenumber', 'total_wavenumber')
-    result = cx.cmap(pad_fn)(field)
-    return result.tag_prefix(self.target_coords)
+    field = field.untag('longitude_wavenumber', 'total_wavenumber')
+    result = cx.cmap(pad_fn, field.named_axes)(field)
+    return result.tag(self.target_coords)
 
   def interpolate_field(self, field: cx.Field) -> cx.Field:
     """Interpolates a single field."""

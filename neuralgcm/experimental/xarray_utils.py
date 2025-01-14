@@ -37,7 +37,7 @@ XR_LAT_NAME = 'latitude'
 
 
 def _wrap_suffix(array: typing.Array, *names: AxisName | cx.Coordinate):
-  return cx.wrap(array).tag_suffix(*names).with_positional_prefix()
+  return cx.wrap(array).tag(..., *names)
 
 
 verify_grid_consistency = dino_xarray_utils.verify_grid_consistency

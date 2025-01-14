@@ -8,16 +8,13 @@ from neuralgcm.experimental.coordax import core
 import numpy as np
 
 
-AxisName = core.AxisName
-
-
 def assert_field_properties(
     actual: core.Field,
     data: np.ndarray | jax.Array | None = None,
-    dims: tuple[AxisName, ...] | None = None,
+    dims: tuple[str, ...] | None = None,
     shape: tuple[int, ...] | None = None,
-    coord_field_keys: set[AxisName] | None = None,
-    named_shape: Mapping[AxisName, int] | None = None,
+    coord_field_keys: set[str] | None = None,
+    named_shape: Mapping[str, int] | None = None,
     positional_shape: tuple[int, ...] | None = None,
     rtol: float = 1e-5,
     atol: float = 1e-5,

@@ -18,9 +18,6 @@ provide methods & coordinate field values to facilitate computations.
 ``Field`` objects keep track of positional and named dimensions of an array.
 Named dimensions of a ``Field`` are associated with coordinates that describe
 their discretization.
-
-Current implementation of ``Field`` and associated helper methods like `cmap`
-(coordinate-map) are based on `penzai.core.named_axes` library.
 """
 
 from __future__ import annotations
@@ -30,16 +27,17 @@ import collections
 import dataclasses
 import functools
 import operator
-from typing import Any, Callable, Hashable, Mapping, Sequence, TypeAlias, TypeGuard
+import textwrap
+import types
+from typing import Any, Callable, Mapping, Self, TypeAlias, TypeGuard
 
 import jax
 import jax.numpy as jnp
+from neuralgcm.experimental.coordax import named_axes
 import numpy as np
-from penzai.core import named_axes
 from penzai.core import struct
 
 
-AxisName: TypeAlias = Hashable
 Pytree: TypeAlias = Any
 
 
@@ -53,7 +51,7 @@ class Coordinate(abc.ABC):
 
   @property
   @abc.abstractmethod
-  def dims(self) -> tuple[AxisName, ...]:
+  def dims(self) -> tuple[str, ...]:
     """Dimension names of the coordinate."""
     raise NotImplementedError()
 
@@ -65,11 +63,11 @@ class Coordinate(abc.ABC):
 
   @property
   @abc.abstractmethod
-  def fields(self) -> dict[AxisName, Field]:
+  def fields(self) -> dict[str, Field]:
     """A maps from field names to their values."""
 
   @property
-  def sizes(self) -> dict[AxisName, int]:
+  def sizes(self) -> dict[str, int]:
     """Sizes of all dimensions on this coordinate."""
     return dict(zip(self.dims, self.shape))
 
@@ -114,7 +112,7 @@ class SelectedAxis(Coordinate, struct.Struct):
       )
 
   @property
-  def dims(self) -> tuple[AxisName, ...]:
+  def dims(self) -> tuple[str, ...]:
     """Dimension names of the coordinate."""
     return (self.coordinate.dims[self.axis],)
 
@@ -124,7 +122,7 @@ class SelectedAxis(Coordinate, struct.Struct):
     return (self.coordinate.shape[self.axis],)
 
   @property
-  def fields(self) -> dict[AxisName, Field]:
+  def fields(self) -> dict[str, Field]:
     """A maps from field names to their values."""
     return self.coordinate.fields
 
@@ -176,6 +174,7 @@ def consolidate_coordinates(*coordinates: Coordinate) -> tuple[Coordinate, ...]:
   return tuple(result)
 
 
+# TODO(shoyer): drop penzai.struct dependency
 @struct.pytree_dataclass
 class CartesianProduct(Coordinate, struct.Struct):
   """Coordinate defined as the outer product of independent coordinates."""
@@ -224,7 +223,7 @@ class CartesianProduct(Coordinate, struct.Struct):
     return sum([c.shape for c in self.coordinates], start=tuple())
 
   @property
-  def fields(self) -> dict[AxisName, Field]:
+  def fields(self) -> dict[str, Field]:
     """Returns a mapping from field names to their values."""
     return functools.reduce(
         operator.or_, [c.fields for c in self.coordinates], {}
@@ -235,11 +234,14 @@ class CartesianProduct(Coordinate, struct.Struct):
 class NamedAxis(Coordinate, struct.Struct):
   """One dimensional coordinate that only dimension size."""
 
-  name: AxisName = dataclasses.field(metadata={'pytree_node': False})
+  name: str = dataclasses.field(metadata={'pytree_node': False})
   size: int = dataclasses.field(metadata={'pytree_node': False})
 
+  name: str
+  size: int
+
   @property
-  def dims(self) -> tuple[AxisName, ...]:
+  def dims(self) -> tuple[str, ...]:
     return (self.name,)
 
   @property
@@ -247,7 +249,7 @@ class NamedAxis(Coordinate, struct.Struct):
     return (self.size,)
 
   @property
-  def fields(self) -> dict[AxisName, Field]:
+  def fields(self) -> dict[str, Field]:
     return {}
 
   def __repr__(self):
@@ -261,11 +263,11 @@ class NamedAxis(Coordinate, struct.Struct):
 class LabeledAxis(Coordinate):  # pytype: disable=final-error
   """One dimensional coordinate with custom coordinate values."""
 
-  name: AxisName = dataclasses.field(metadata={'pytree_node': False})
-  ticks: np.ndarray = dataclasses.field(metadata={'pytree_node': False})
+  name: str
+  ticks: np.ndarray
 
   @property
-  def dims(self) -> tuple[AxisName, ...]:
+  def dims(self) -> tuple[str, ...]:
     return (self.name,)
 
   @property
@@ -273,7 +275,7 @@ class LabeledAxis(Coordinate):  # pytype: disable=final-error
     return self.ticks.shape
 
   @property
-  def fields(self) -> dict[AxisName, Field]:
+  def fields(self) -> dict[str, Field]:
     return {self.name: wrap(self.ticks, self)}
 
   def _components(self):
@@ -323,15 +325,15 @@ def compose_coordinates(*coordinates: Coordinate) -> Coordinate:
   return CartesianProduct(coordinates)
 
 
-def _dimension_names(*names: AxisName | Coordinate) -> tuple[AxisName, ...]:
+def _dimension_names(*names: str | Coordinate) -> tuple[str, ...]:
   """Returns a tuple of dimension names from a list of names or coordinates."""
   dims_or_name_tuple = lambda x: x.dims if isinstance(x, Coordinate) else (x,)
   return sum([dims_or_name_tuple(c) for c in names], start=tuple())
 
 
 def _validate_matching_coords(
-    *axis_order: AxisName | Coordinate,
-    coords: dict[AxisName, Coordinate],
+    *axis_order: str | Coordinate,
+    coords: dict[str, Coordinate],
 ):
   """Validates `axis_order` entries match with coordinates in `coords`."""
   coordinates = []
@@ -363,11 +365,16 @@ def is_positional_prefix_field(f: Field) -> bool:
   return isinstance(f.named_array, named_axes.NamedArray)
 
 
-def cmap(fun: Callable[..., Any]) -> Callable[..., Any]:
+def cmap(
+    fun: Callable[..., Any], out_axes: dict[str, int] | None = None
+) -> Callable[..., Any]:
   """Vectorizes `fun` over coordinate dimensions of ``Field`` inputs.
 
   Args:
     fun: Function to vectorize over coordinate dimensions.
+    out_axes: Optional dictionary from dimension names to axis positions in the
+      output. By default, dimension names appear as the trailing dimensions of
+      every output, in order of their appearance on the inputs.
 
   Returns:
     A vectorized version of `fun` that applies original `fun` to locally
@@ -383,11 +390,14 @@ def cmap(fun: Callable[..., Any]) -> Callable[..., Any]:
     fun_doc = fun.__doc__
   else:
     fun_doc = None
-  return _cmap_with_doc(fun, fun_name, fun_doc)
+  return _cmap_with_doc(fun, fun_name, fun_doc, out_axes)
 
 
 def _cmap_with_doc(
-    fun: Callable[..., Any], fun_name: str, fun_doc: str | None = None
+    fun: Callable[..., Any],
+    fun_name: str,
+    fun_doc: str | None = None,
+    out_axes: dict[str, int] | None = None,
 ) -> Callable[..., Any]:
   """Builds a coordinate-vectorized wrapped function with a docstring."""
 
@@ -404,22 +414,15 @@ def _cmap_with_doc(
         else:
           all_coords[dim_name] = c
     named_array_leaves = [x.named_array if is_field(x) else x for x in leaves]
-    fun_on_named_arrays = named_axes.nmap(fun)
+    fun_on_named_arrays = named_axes.nmap(fun, out_axes=out_axes)
     na_args, na_kwargs = jax.tree.unflatten(treedef, named_array_leaves)
     result = fun_on_named_arrays(*na_args, **na_kwargs)
 
     def _wrap_field(leaf):
-      if isinstance(leaf, named_axes.NamedArray):
-        return Field(
-            named_array=leaf,
-            coords={k: all_coords[k] for k in leaf.named_axes.keys()},
-        )
-      else:
-        assert isinstance(leaf, named_axes.NamedArrayView)
-        return Field(
-            named_array=leaf,
-            coords={k: all_coords[k] for k in leaf.data_axis_for_name.keys()},
-        )
+      return Field.from_namedarray(
+          named_array=leaf,
+          coords={k: all_coords[k] for k in leaf.dims if k is not None},
+      )
 
     return jax.tree.map(_wrap_field, result, is_leaf=named_axes.is_namedarray)
 
@@ -446,11 +449,11 @@ def _wrap_scalar_conversion(scalar_conversion):
   """Wraps a scalar conversion operator on a Field."""
 
   def wrapped_scalar_conversion(self: Field):
-    if self.named_shape or self.positional_shape:
+    if self.shape:
       raise ValueError(
           f'Cannot convert a non-scalar Field with {scalar_conversion}'
       )
-    return scalar_conversion(self.unwrap())
+    return scalar_conversion(self.data)
 
   return wrapped_scalar_conversion
 
@@ -474,66 +477,40 @@ def _wrap_array_method(name):
       'Name-vectorized version of array method'
       f' `{name} <numpy.ndarray.{name}>`. Takes similar arguments as'
       f' `{name} <numpy.ndarray.{name}>` but accepts and returns Fields'
-      ' (or FieldViews) in place of regular arrays.'
+      ' in place of regular arrays.'
   )
   return wrapped_func
 
 
-def _wrap_array_or_scalar(inputs: float | np.ndarray | jax.Array) -> Field:
-  """Helper function that wraps inputs in a fully positional Field."""
-  if isinstance(inputs, float):
-    data_array = jnp.array(inputs)
-  elif isinstance(inputs, np.ndarray):
-    data_array = inputs
-  else:
-    data_array = jnp.asarray(inputs)
-  named_array = named_axes.NamedArray(
-      named_axes=collections.OrderedDict(), data_array=data_array
-  )
-  wrapped = Field(
-      named_array=named_array,
-      coords={},
-  )
-  return wrapped
+@jax.tree_util.register_pytree_node_class
+class Field:
+  """An array with optional named dimensions and associated coordinates."""
 
+  _named_array: named_axes.NamedArray
+  _coords: dict[str, Coordinate]
 
-@struct.pytree_dataclass
-class Field(struct.Struct):
-  """An array with a combination of positional and named dimensions.
+  def __init__(
+      self,
+      data: jax.typing.ArrayLike,
+      dims: tuple[str | None, ...] | None = None,
+      coords: dict[str, Coordinate] | None = None,
+  ):
+    """Construct a Field.
 
-  Attributes:
-    named_array: A named array that tracks positional and named dimensions.
-    coords: A mapping from dimension names to their coordinate objects.
-  """
+    Args:
+      data: the underlying data array.
+      dims: optional tuple of dimension names, with the same length as
+        `data.ndim`. Strings indicate named axes, and may not be repeated.
+        `None` indicates positional axes. If `dims` is not provided, all axes
+        are positional.
+      coords: optional mapping from dimension names to associated
+        `coordax.Coordinate` objects.
+    """
+    self._named_array = named_axes.NamedArray(data, dims)
+    self._coords = coords or {}
+    self._check_valid()
 
-  # TODO(shoyer): Consider storing an ndarray and dims separately, and creating
-  # the Penzai NamedArray on the fly. This would be make Penzai more of an
-  # implementation detail instead of part of the public API.
-  # Potential downside: would need a separate wrapper for NamedArrayView.
-  # e.g.,
-  #   data: jax.Array
-  #   dims: tuple[AxisName, ...]
-  #   coord: dict[AxisName, Coordinate]
-  # or
-  #   data: jax.Array
-  #   coords: tuple[Coordinate, ...]
-
-  named_array: named_axes.NamedArray | named_axes.NamedArrayView
-  coords: dict[AxisName, Coordinate] = dataclasses.field(
-      metadata={'pytree_node': False}
-  )
-
-  @property
-  def data(self) -> np.ndarray | jax.Array:
-    """The value of the underlying data array."""
-    return self.named_array.data_array
-
-  @property
-  def dtype(self) -> np.dtype:
-    """The dtype of the field."""
-    return self.named_array.dtype
-
-  def check_valid(self) -> None:
+  def _check_valid(self) -> None:
     """Checks that the field coordinates and dimension names are consistent."""
     data_dims = set(self.named_array.named_shape.keys())
     keys_dims = set(self.coords.keys())
@@ -543,10 +520,38 @@ class Field(struct.Struct):
           'Field dimension names must be the same across keys and coordinates'
           f' , got {data_dims=}, {keys_dims=} and {keys_dims=}.'
       )
-    self.named_array.check_valid()
+
+  @classmethod
+  def from_namedarray(
+      cls,
+      named_array: named_axes.NamedArray,
+      coords: dict[str, Coordinate] | None = None,
+  ) -> Self:
+    """Creates a Field from a named array."""
+    return cls(named_array.data, named_array.dims, coords)
 
   @property
-  def named_shape(self) -> Mapping[AxisName, int]:
+  def named_array(self) -> named_axes.NamedArray:
+    """The value of the underlying named array."""
+    return self._named_array
+
+  @property
+  def coords(self) -> dict[str, Coordinate]:
+    """The coordinate objects associated with this field."""
+    return self._coords
+
+  @property
+  def data(self) -> jax.Array:
+    """The value of the underlying data array."""
+    return self.named_array.data
+
+  @property
+  def dtype(self) -> np.dtype:
+    """The dtype of the field."""
+    return self.named_array.dtype
+
+  @property
+  def named_shape(self) -> Mapping[str, int]:
     """A mapping of axis names to their sizes."""
     return self.named_array.named_shape
 
@@ -558,64 +563,68 @@ class Field(struct.Struct):
   @property
   def shape(self) -> tuple[int, ...]:
     """A tuple of axis sizes of the underlying data array."""
-    return self.named_array.data_array.shape
+    return self.named_array.shape
 
   @property
-  def dims(self) -> tuple[AxisName | int, ...]:
-    """A tuple of indices and dimension names in the data layout order."""
-    if isinstance(self.named_array, named_axes.NamedArray):
-      postional_dims = tuple(range(len(self.positional_shape)))
-      return postional_dims + tuple(self.named_array.named_axes.keys())
-    elif isinstance(self.named_array, named_axes.NamedArrayView):
-      data_axis_for_logical_axis = self.named_array.data_axis_for_logical_axis
-      to_name = {v: k for k, v in self.named_array.data_axis_for_name.items()}
-      to_logical = {v: k for k, v in enumerate(data_axis_for_logical_axis)}
-      axis_to_dim = to_logical | to_name
-      return tuple(
-          axis_to_dim[i] for i in range(len(self.named_array.data_shape))
-      )
-    else:
-      raise TypeError(
-          f'{type(self.named_array)=} is not of expected NamedArray type.'
-      )
+  def ndim(self) -> int:
+    return len(self.dims)
 
   @property
-  def coord_fields(self) -> dict[AxisName, Field]:
+  def dims(self) -> tuple[str | None, ...]:
+    """Named and unnamed dimensions of this array."""
+    return self.named_array.dims
+
+  @property
+  def named_dims(self) -> tuple[str, ...]:
+    """Namd dimensions of this array."""
+    return self.named_array.named_dims
+
+  @property
+  def named_axes(self) -> dict[str, int]:
+    """Mapping from dimension names to axis positions."""
+    return self.named_array.named_axes
+
+  @property
+  def coord_fields(self) -> dict[str, Field]:
     """A mapping from coordinate field names to their values."""
     return functools.reduce(
         operator.or_, [c.fields for c in self.coords.values()], {}
     )
 
-  def unwrap(self, *names: AxisName | Coordinate) -> jax.Array:
-    """Extracts the underlying data from fully positional or named field."""
-    return self.named_array.unwrap(*_dimension_names(*names))
+  def tree_flatten(self):
+    """Flatten this object for JAX pytree operations."""
+    return [self.named_array], self.coords
 
-  def with_positional_prefix(self) -> Field:
-    """Returns a `Field` with positional axes moved to the front."""
-    return Field(
-        named_array=self.named_array.with_positional_prefix(),
-        coords=self.coords,
-    )
+  @classmethod
+  def tree_unflatten(cls, coords, leaves) -> Self:
+    """Unflatten this object for JAX pytree operations."""
+    [named_array] = leaves
+    result = object.__new__(cls)
+    result._named_array = named_array
+    result._coords = coords
+    if isinstance(named_array.data, jnp.ndarray):
+      result._check_valid()
+    return result
 
-  def as_view(self) -> Field:
-    """Returns a `Field` with a view representation of the underlying data."""
-    return Field(
-        named_array=self.named_array.as_namedarrayview(),
-        coords=self.coords,
-    )
+  def unwrap(self, *names: str | Coordinate) -> jax.Array:
+    """Extracts underlying data from a field without named dimensions."""
+    names = _dimension_names(*names)
+    if names != self.named_dims:
+      raise ValueError(
+          f'Field has {self.named_dims=} but {names=} were requested.'
+      )
+    return self.data
 
-  def untag(self, *axis_order: AxisName | Coordinate) -> Field:
+  def untag(self, *axis_order: str | Coordinate) -> Field:
     """Returns a view of the field with the requested axes made positional."""
     _validate_matching_coords(*axis_order, coords=self.coords)
     untag_dims = _dimension_names(*axis_order)
-    result = Field(
-        named_array=self.named_array.untag(*untag_dims),
-        coords={k: v for k, v in self.coords.items() if k not in untag_dims},
-    )
-    result.check_valid()
+    named_array = self.named_array.untag(*untag_dims)
+    coords = {k: v for k, v in self.coords.items() if k not in untag_dims}
+    result = Field.from_namedarray(named_array=named_array, coords=coords)
     return result
 
-  def tag(self, *names: AxisName | Coordinate) -> Field:
+  def tag(self, *names: str | Coordinate | ellipsis | None) -> Field:
     """Returns a Field with attached coordinates to the positional axes."""
     tag_dims = _dimension_names(*names)
     tagged_array = self.named_array.tag(*tag_dims)
@@ -625,171 +634,45 @@ class Field(struct.Struct):
       if isinstance(c, Coordinate):
         if isinstance(c, CartesianProduct):
           for sub_c in c.coordinates:
-            coords[sub_c.dims[0]] = sub_c
+            [dim] = sub_c.dims  # all sub-coordinates are 1d
+            coords[dim] = sub_c
         else:
           for i, dim in enumerate(c.dims):
             coords[dim] = c if c.ndim == 1 else SelectedAxis(c, i)
-      else:
+      elif isinstance(c, str):
         coords[c] = NamedAxis(c, size=tagged_array.named_shape[c])
-    result = Field(named_array=tagged_array, coords=coords)
-    result.check_valid()
+    result = Field.from_namedarray(tagged_array, coords)
     return result
-
-  @property
-  def ndim(self) -> int:
-    return len(self.dims)
-
-  def untag_prefix(self, *axis_order: AxisName | Coordinate) -> Field:
-    """Returns a field with requested axes made front positional axes."""
-    _validate_matching_coords(*axis_order, coords=self.coords)
-    untag_dims = _dimension_names(*axis_order)
-    result = Field(
-        named_array=self.named_array.untag_prefix(*untag_dims),
-        coords={k: v for k, v in self.coords.items() if k not in untag_dims},
-    )
-    result.check_valid()
-    return result
-
-  def tag_prefix(self, *axis_order: AxisName | Coordinate) -> Field:
-    """Returns a field with coords attached to the first positional axes."""
-    tag_dims = _dimension_names(*axis_order)
-    tagged_array = self.named_array.tag_prefix(*tag_dims)
-    coords = {}
-    coords.update(self.coords)
-    for c in axis_order:
-      if isinstance(c, Coordinate):
-        for dim in c.dims:
-          coords[dim] = c
-      else:
-        coords[c] = NamedAxis(c, size=tagged_array.named_shape[c])
-    result = Field(named_array=tagged_array, coords=coords)
-    result.check_valid()
-    return result
-
-  def tag_suffix(self, *axis_order: AxisName | Coordinate) -> Field:
-    """Returns a field with coords attached to the last positional axes."""
-    n_tmp = len(self.positional_shape) - len(_dimension_names(*axis_order))
-    tmp_dims = [named_axes.TmpPosAxisMarker() for _ in range(n_tmp)]
-    return self.tag(*tmp_dims, *axis_order).untag_prefix(*tmp_dims)
-
-  def untag_suffix(self, *axis_order: AxisName | Coordinate) -> Field:
-    """Returns a field with requested axes made last positional axes."""
-    n_tmp = len(self.positional_shape)
-    tmp_dims = [named_axes.TmpPosAxisMarker() for _ in range(n_tmp)]
-    return self.tag(*tmp_dims).untag(*tmp_dims, *axis_order)
 
   # Note: Can't call this "transpose" like Xarray, to avoid conflicting with the
   # positional only ndarray method.
-  def order_as(self, *axis_order: AxisName | Coordinate) -> Field:
+  def order_as(self, *axis_order: str | Coordinate) -> Field:
     """Returns a field with the axes in the given order."""
     _validate_matching_coords(*axis_order, coords=self.coords)
     ordered_dims = _dimension_names(*axis_order)
     ordered_array = self.named_array.order_as(*ordered_dims)
-    result = Field(named_array=ordered_array, coords=self.coords)
-    result.check_valid()
+    result = Field.from_namedarray(ordered_array, self.coords)
     return result
 
-  def order_like(self, other: Field) -> Field:
-    """Returns a field with the axes in the same order as `other`."""
-    self.check_valid()
-    other.check_valid()
-    # To be able to order-like coordinates of two fields must match.
-    _validate_matching_coords(*other.coords.values(), coords=self.coords)
-    return Field(
-        named_array=self.named_array.order_like(other.named_array),
-        coords=self.coords,
-    )
-
-  def broadcast_to(
-      self,
-      positional_shape: Sequence[int] = (),
-      named_shape: Mapping[AxisName, int] | tuple[Coordinate, ...] = (),
-  ) -> Field:
-    """Returns a field with positional and named shapes broadcasted."""
-    if isinstance(named_shape, tuple):
-      # TODO(dkochkov): Do we need to support broadcast_to with new coordinates?
-      _validate_matching_coords(*named_shape, coords=self.coords)
-      coordinates = [c for c in named_shape if isinstance(c, Coordinate)]
-      dims = _dimension_names(*coordinates)
-      shapes = sum([c.shape for c in coordinates], start=tuple())
-      named_shape = {dim: size for dim, size in zip(dims, shapes)}
-    return Field(
-        named_array=self.named_array.broadcast_to(
-            positional_shape, named_shape
-        ),
-        coords=self.coords,
-    )
-
-  def broadcast_like(self, other: Field | jax.typing.ArrayLike) -> Field:
-    """Returns a field broadcasted to the shape of `other`."""
-    if isinstance(other, Field):
-      return self.broadcast_to(other.positional_shape, other.named_shape)
+  def __repr__(self):
+    data_repr = textwrap.indent(repr(self.data), prefix=' ' * 13)[13:]
+    if self.coords:
+      coords_repr = (
+          '{\n'
+          + '\n'.join(
+              textwrap.indent(f'{k!r}: {v},', prefix=' ' * 12)
+              for k, v in self.coords.items()
+          )
+          + '\n        }'
+      )
     else:
-      shape = jnp.shape(other)
-      return self.broadcast_to(shape, {})
-
-  def __getitem__(self, indexer) -> Field:
-    """Retrieves slices from an indexer, as in pz.core.named_axes indexing."""
-    self.check_valid()
-    # TODO(shoyer): consider disabling positional indexing, because it's
-    # ambiguous whether it refers to positional-only or all axes.
-    return Field(
-        named_array=self.named_array.at[indexer].get(), coords=self.coords
-    )
-
-  # Iteration. Note that we *must* implement this to avoid Python simply trying
-  # to run __getitem__ until it raises IndexError, because we won't raise
-  # IndexError (since JAX clips array indices).
-  def __iter__(self):
-    if not self.positional_shape:
-      raise ValueError('Cannot iterate over an array with no positional axes.')
-    for i in range(self.positional_shape[0]):
-      yield self[i]
-
-  @classmethod
-  def wrap(
-      cls, array: jax.typing.ArrayLike | float, *names: AxisName | Coordinate
-  ) -> Field:
-    """Wraps a positional array as a ``Field``."""
-    wrapped = _wrap_array_or_scalar(array)
-    if names:
-      return wrapped.tag(*names)
-    else:
-      return wrapped
-
-  # TODO(shoyer): after updating the data model, the __repr__ should look like
-  # either:
-  #
-  # Field(
-  #     data=array(...),
-  #     coords=(
-  #         NamedAxis("time"),
-  #         LatLonGrid(...),
-  #     ),
-  # )
-  #
-  # or:
-  #
-  # Field(
-  #     data=array(...),
-  #     dims=('time', 'lon', 'lat'),
-  #     coords={
-  #         'time': NamedAxis("time"),
-  #         'lon': SelectedAxis(LonLatGrid(...), axis=0),
-  #         'lat': SelectedAxis(LonLatGrid(...), axis=1),
-  #     }
-  # )
-
-  # TODO(shoyer): restore a custom repr, once it's clear that we handle axis
-  # order consistently with penzai.
-  # def __repr__(self):
-  #   indent = '    '
-  #   data_repr = textwrap.indent(repr(self.data), prefix=indent)
-  #   coordinates = consolidate_coordinates(*self.coords.values())
-  #   coords_repr = indent + f',\n{indent}'.join(
-  #       repr(c).removeprefix('coordax.') for c in coordinates
-  #   )
-  #   return f'coordax.Field.wrap(\n{data_repr},\n{coords_repr},\n)'
+      coords_repr = '{}'
+    return textwrap.dedent(f"""\
+    {type(self).__name__}(
+        data={data_repr},
+        dims={self.dims},
+        coords={coords_repr},
+    )""")
 
   # Convenience wrappers: Elementwise infix operators.
   __lt__ = _cmap_with_doc(operator.lt, 'jax.Array.__lt__')
@@ -860,6 +743,7 @@ class Field(struct.Struct):
   # Intentionally not included: anything that acts on a subset of axes or takes
   # an axis as an argument (e.g., mean). It is ambiguous whether these should
   # act over positional or named axes.
+  # TODO(shoyer): re-write some of these with explicit APIs similar to xarray.
 
   # maybe include some of below with names that signify positional nature?
   # reshape = _wrap_array_method('reshape')
@@ -869,15 +753,17 @@ class Field(struct.Struct):
   # mT = _wrap_array_method('mT')  # pylint: disable=invalid-name
 
 
-wrap = Field.wrap
+def wrap(array: jax.typing.ArrayLike, *names: str | Coordinate | None) -> Field:
+  """Wraps a positional array as a ``Field``."""
+  field = Field(array)
+  if names:
+    field = field.tag(*names)
+  return field
 
 
-def wrap_like(array: jax.Array, other: Field) -> Field:
+def wrap_like(array: jax.typing.ArrayLike, other: Field) -> Field:
   """Wraps `array` with the same coordinates as `other`."""
-  other.check_valid()
+  array = jnp.asarray(array)
   if array.shape != other.shape:
     raise ValueError(f'{array.shape=} and {other.shape=} must be equal')
-  return Field(
-      named_array=dataclasses.replace(other.named_array, data_array=array),
-      coords=other.coords,
-  )
+  return Field(array, other.dims, other.coords)

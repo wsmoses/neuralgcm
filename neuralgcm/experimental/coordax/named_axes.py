@@ -413,8 +413,18 @@ class NamedArray:
 
   @property
   def dims(self) -> tuple[str | None, ...]:
-    """Dimension names of this array."""
+    """Named and unnamed dimensions of this array."""
     return self._dims
+
+  @property
+  def named_dims(self) -> tuple[str, ...]:
+    """Named dimensions of this array."""
+    return tuple(dim for dim in self._dims if dim is not None)
+
+  @property
+  def named_axes(self) -> dict[str, int]:
+    """Mapping from dimension names to axis positions."""
+    return {dim: axis for axis, dim in enumerate(self._dims) if dim is not None}
 
   @property
   def ndim(self) -> int:
@@ -437,6 +447,11 @@ class NamedArray:
   def named_shape(self) -> dict[str, int]:
     """Mapping from dimension names to sizes."""
     return _named_shape(self.dims, self.data.shape)
+
+  @property
+  def dtype(self) -> jnp.dtype:
+    """The dtype of the underlying data array."""
+    return self.data.dtype
 
   def __repr__(self) -> str:
     indent = lambda x: textwrap.indent(x, prefix=' ' * 13)[13:]
@@ -709,17 +724,17 @@ class NamedArray:
 PyTree = Any
 
 
-def _is_named_array(array: Any) -> bool:
+def is_namedarray(array: Any) -> bool:
   return isinstance(array, NamedArray)
 
 
 def tag(tree: PyTree, *dims: str | ellipsis | None) -> PyTree:
   """Tag dimensions on all NamedArrays in a PyTree."""
-  tag_arrays = lambda x: x.tag(*dims) if _is_named_array(x) else x
-  return jax.tree.map(tag_arrays, tree, is_leaf=_is_named_array)
+  tag_arrays = lambda x: x.tag(*dims) if is_namedarray(x) else x
+  return jax.tree.map(tag_arrays, tree, is_leaf=is_namedarray)
 
 
 def untag(tree: PyTree, *dims: str) -> PyTree:
   """Untag dimensions from all NamedArrays in a PyTree."""
-  untag_arrays = lambda x: x.untag(*dims) if _is_named_array(x) else x
-  return jax.tree.map(untag_arrays, tree, is_leaf=_is_named_array)
+  untag_arrays = lambda x: x.untag(*dims) if is_namedarray(x) else x
+  return jax.tree.map(untag_arrays, tree, is_leaf=is_namedarray)

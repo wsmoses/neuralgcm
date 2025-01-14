@@ -184,6 +184,11 @@ class NamedAxesTest(absltest.TestCase):
     data = np.arange(10).reshape((2, 5))
 
     array = named_axes.NamedArray(data, (None, 'y'))
+    expected = array
+    actual = array.tag(None)
+    assert_named_array_equal(actual, expected)
+
+    array = named_axes.NamedArray(data, (None, 'y'))
     expected = named_axes.NamedArray(data, ('x', 'y'))
     actual = array.tag('x')
     assert_named_array_equal(actual, expected)
@@ -191,6 +196,28 @@ class NamedAxesTest(absltest.TestCase):
     array = named_axes.NamedArray(data, (None, None))
     expected = named_axes.NamedArray(data, ('x', 'y'))
     actual = array.tag('x', 'y')
+    assert_named_array_equal(actual, expected)
+
+  def test_tag_ellipsis(self):
+    data = np.arange(10).reshape((2, 5))
+
+    array = named_axes.NamedArray(data, (None, 'y'))
+    expected = named_axes.NamedArray(data, ('x', 'y'))
+    actual = array.tag('x', ...)
+    assert_named_array_equal(actual, expected)
+
+    array = named_axes.NamedArray(data, (None, None))
+    expected = named_axes.NamedArray(data, ('x', 'y'))
+    actual = array.tag('x', ..., 'y')
+    assert_named_array_equal(actual, expected)
+    actual = array.tag(..., 'x', 'y')
+    assert_named_array_equal(actual, expected)
+    actual = array.tag('x', 'y', ...)
+    assert_named_array_equal(actual, expected)
+
+    array = named_axes.NamedArray(data, ('x', None))
+    expected = named_axes.NamedArray(data, ('x', 'y'))
+    actual = array.tag(..., 'y')
     assert_named_array_equal(actual, expected)
 
   def test_tag_errors(self):
@@ -220,9 +247,27 @@ class NamedAxesTest(absltest.TestCase):
 
     with self.assertRaisesRegex(
         TypeError,
-        re.escape('dimension names must be strings: (None, None)'),
+        re.escape('dimension names must be strings, ... or None: (1, 2)'),
     ):
-      array.tag(None, None)
+      array.tag(1, 2)
+
+    with self.assertRaisesRegex(
+        ValueError,
+        re.escape(
+            'dimension names contain multiple ellipses (...): '
+            '(Ellipsis, Ellipsis)'
+        ),
+    ):
+      array.tag(..., ...)
+
+    with self.assertRaisesRegex(
+        ValueError,
+        re.escape(
+            'too many dimensions supplied to `tag` for the 2 positional axes: '
+            "('x', 'y', 'z', Ellipsis)"
+        ),
+    ):
+      array.tag('x', 'y', 'z', ...)
 
   def test_untag_valid(self):
     data = np.arange(10).reshape((2, 5))

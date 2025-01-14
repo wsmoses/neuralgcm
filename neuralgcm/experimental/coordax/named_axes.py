@@ -353,6 +353,7 @@ _VALID_PYTREE_OPS = (
 @dataclasses.dataclass
 class _ShapedLeaf:
   """Helper for NamedArray tree_unflatten/tree_flatten."""
+
   value: Any
   shape: tuple[int, ...]
 
@@ -503,13 +504,14 @@ class NamedArray:
       dims = dims[-data.ndim :]
     return cls(data, dims)
 
-
-  def tag(self, *dims: str) -> Self:
+  def tag(self, *dims: str | ellipsis | None) -> Self:
     """Attaches dimension names to the positional axes of an array.
 
     Args:
       *dims: axis names to assign to each positional axis in the array. Must
-        have exactly the same length as the number of unnamed axes in the array.
+        have exactly the same length as the number of unnamed axes in the array,
+        unless ellipsis is used (at most once), which indicates all remaining
+        unnamed axes at that position.
 
     Raises:
       ValueError: If the wrong number of dimensions are provided.
@@ -518,16 +520,36 @@ class NamedArray:
       A NamedArray with the given names assigned to the positional axes, and no
       remaining positional axes.
     """
-    if len(dims) != len(self.positional_shape):
-      pos_ndim = len(self.positional_shape)
-      raise ValueError(
-          'there must be exactly as many dimensions given to `tag` as there'
-          f' are positional axes in the array, but got {dims} for '
-          f'{pos_ndim} positional {"axis" if pos_ndim == 1 else "axes"}.'
-      )
+    if not all(
+        isinstance(name, (str, types.EllipsisType, types.NoneType))
+        for name in dims
+    ):
+      raise TypeError(f'dimension names must be strings, ... or None: {dims}')
 
-    if any(not isinstance(name, str) for name in dims):
-      raise TypeError(f'dimension names must be strings: {dims}')
+    pos_ndim = len(self.positional_shape)
+
+    ellipsis_count = sum(dim is ... for dim in dims)
+    if ellipsis_count > 1:
+      raise ValueError(
+          f'dimension names contain multiple ellipses (...): {dims}'
+      )
+    elif ellipsis_count == 1:
+      if len(dims) - 1 > pos_ndim:
+        raise ValueError(
+            'too many dimensions supplied to `tag` for the '
+            f'{pos_ndim} positional {"axis" if pos_ndim == 1 else "axes"}: '
+            f'{dims}'
+        )
+      inserted_dims = (None,) * (pos_ndim - len(dims) + 1)
+      i = dims.index(...)
+      dims = dims[:i] + inserted_dims + dims[i + 1 :]
+    else:
+      if len(dims) != pos_ndim:
+        raise ValueError(
+            'there must be exactly as many dimensions given to `tag` as there'
+            f' are positional axes in the array, but got {dims} for '
+            f'{pos_ndim} positional {"axis" if pos_ndim == 1 else "axes"}.'
+        )
 
     dim_queue = list(reversed(dims))
     new_dims = tuple(
@@ -691,7 +713,7 @@ def _is_named_array(array: Any) -> bool:
   return isinstance(array, NamedArray)
 
 
-def tag(tree: PyTree, *dims: str) -> PyTree:
+def tag(tree: PyTree, *dims: str | ellipsis | None) -> PyTree:
   """Tag dimensions on all NamedArrays in a PyTree."""
   tag_arrays = lambda x: x.tag(*dims) if _is_named_array(x) else x
   return jax.tree.map(tag_arrays, tree, is_leaf=_is_named_array)

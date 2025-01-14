@@ -22,6 +22,7 @@ Some code and documentation is adapted from penzai.core.named_axes.
 """
 from __future__ import annotations
 
+import dataclasses
 import functools
 import operator
 import textwrap
@@ -30,6 +31,7 @@ from typing import Any, Callable, Self, TypeVar
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 
 
 def _collect_named_shape(
@@ -348,6 +350,19 @@ _VALID_PYTREE_OPS = (
 )
 
 
+@dataclasses.dataclass
+class _ShapedLeaf:
+  """Helper for NamedArray tree_unflatten/tree_flatten."""
+  value: Any
+  shape: tuple[int, ...]
+
+
+def _named_shape(
+    dims: tuple[str | None, ...], shape: tuple[int, ...]
+) -> dict[str, int]:
+  return {dim: size for dim, size in zip(dims, shape) if dim is not None}
+
+
 @jax.tree_util.register_pytree_node_class
 class NamedArray:
   """Array with optionally named axes.
@@ -420,11 +435,7 @@ class NamedArray:
   @property
   def named_shape(self) -> dict[str, int]:
     """Mapping from dimension names to sizes."""
-    return {
-        dim: size
-        for dim, size in zip(self.dims, self.data.shape)
-        if dim is not None
-    }
+    return _named_shape(self.dims, self.data.shape)
 
   def __repr__(self) -> str:
     indent = lambda x: textwrap.indent(x, prefix=' ' * 13)[13:]
@@ -436,24 +447,42 @@ class NamedArray:
 
   def tree_flatten(self):
     """Flatten this object for JAX pytree operations."""
-    if isinstance(self.data, jnp.ndarray):
-      size_info = tuple(self.named_shape.items())
-    else:
-      # Arrays unflattened from non-ndarray leaves are flattened inside vmap.
-      # The resulting treedef is ignored.
-      size_info = None
-    return [self.data], (self.dims, size_info)
+    # Arrays unflattened from non-ndarray leaves are wrapped with _ShapedLeaf,
+    # which gives them a shape.
+    data = self.data.value if isinstance(self.data, _ShapedLeaf) else self.data
+    return [data], (self.dims, self.shape)
 
   @classmethod
-  def _new_unvalidated(
-      cls, data: jnp.ndarray, dims: tuple[str | None, ...]
-  ) -> Self:
-    """Create a new NamedArray, without validating data and dims."""
-    # pylint: disable=protected-access
-    obj = super().__new__(cls)
-    obj._data = data
-    obj._dims = dims
-    return obj
+  def tree_unflatten(cls, treedef, leaves: list[jax.Array | object]) -> Self:
+    """Unflatten this object for JAX pytree operations."""
+    dims, shape = treedef
+    [data] = leaves
+
+    # work around https://github.com/jax-ml/jax/issues/25745
+    if isinstance(data, np.ndarray):
+      data = jnp.asarray(data)
+
+    if not isinstance(data, jnp.ndarray):
+      # JAX builds pytrees with non-ndarray leaves inside some transformations,
+      # such as vmap, for handling the in_axes argument. We wrap these leaves
+      # with _ShapedLeaf to ensure that they produce the same treedef when
+      # unflattened.
+      # pylint: disable=protected-access
+      obj = super().__new__(cls)
+      obj._data = _ShapedLeaf(data, shape)  # type: ignore
+      obj._dims = dims
+      return obj
+
+    # Restored NamedArray objects may have additional or removed leading
+    # dimensions, if produced with scan or vmap.
+    result = cls._new_with_padded_or_trimmed_dims(data, dims)
+    expected_named_shape = _named_shape(dims, shape)
+    if result.named_shape != expected_named_shape:
+      raise ValueError(
+          'named shape mismatch when unflattening to a NamedArray: '
+          f'{result.named_shape} != {expected_named_shape}. {_VALID_PYTREE_OPS}'
+      )
+    return result
 
   @classmethod
   def _new_with_padded_or_trimmed_dims(
@@ -474,28 +503,6 @@ class NamedArray:
       dims = dims[-data.ndim :]
     return cls(data, dims)
 
-  @classmethod
-  def tree_unflatten(cls, treedef, leaves: list[jax.Array | object]) -> Self:
-    """Unflatten this object for JAX pytree operations."""
-    dims, size_info = treedef
-    [data] = leaves
-
-    if not isinstance(data, jnp.ndarray):
-      # JAX builds pytrees with non-ndarray leaves inside some transformations,
-      # such as vmap, for handling the in_axes argument.
-      return cls._new_unvalidated(data, dims)
-
-    # Restored NamedArray objects may have additional or removed leading
-    # dimensions, if produced with scan or vmap.
-    result = cls._new_with_padded_or_trimmed_dims(data, dims)
-    assert size_info is not None
-    named_shape = dict(size_info)
-    if result.named_shape != named_shape:
-      raise ValueError(
-          'named shape mismatch when unflattening to a NamedArray: '
-          f'{result.named_shape} != {named_shape}. {_VALID_PYTREE_OPS}'
-      )
-    return result
 
   def tag(self, *dims: str) -> Self:
     """Attaches dimension names to the positional axes of an array.

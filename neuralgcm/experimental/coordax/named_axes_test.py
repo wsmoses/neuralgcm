@@ -111,10 +111,32 @@ class NamedAxesTest(absltest.TestCase):
     actual = jax.tree.map(lambda x: x[0, ...], array)
     assert_named_array_equal(actual, expected)
 
+  def test_tree_map_replace_with_non_array_same_treedef(self):
+    data = np.arange(10).reshape((2, 5))
+    array = named_axes.NamedArray(data, ('x', 'y'))
+    expected_treedef = jax.tree.structure(array)
+    expected_leaf = object()
+    object_array = jax.tree.map(lambda x: expected_leaf, array)
+    [actual_leaf], actual_treedef = jax.tree.flatten(object_array)
+    self.assertIs(actual_leaf, expected_leaf)
+    self.assertEqual(actual_treedef, expected_treedef)
+
   def test_jit(self):
     data = np.arange(10).reshape((2, 5))
     array = named_axes.NamedArray(data, ('x', 'y'))
     actual = jax.jit(lambda x: x)(array)
+    assert_named_array_equal(actual, array)
+
+    lowered = jax.jit(lambda x: x).lower(array)
+    compiled = lowered.compile()
+    actual = compiled(array)
+    assert_named_array_equal(actual, array)
+
+  def test_jit_constructor(self):
+    data = np.arange(10).reshape((2, 5))
+    array = jax.jit(named_axes.NamedArray)(data)
+    actual = named_axes.NamedArray(data)
+    self.assertIsInstance(actual.data, jnp.ndarray)
     assert_named_array_equal(actual, array)
 
   def test_grad(self):
@@ -144,6 +166,13 @@ class NamedAxesTest(absltest.TestCase):
         ),
     ):
       jax.vmap(lambda x: x)(array)
+
+  def test_vmap_constructor(self):
+    data = np.arange(3)
+    array = jax.vmap(named_axes.NamedArray)(data)
+    actual = named_axes.NamedArray(data)
+    self.assertIsInstance(actual.data, jnp.ndarray)
+    assert_named_array_equal(actual, array)
 
   def test_scan(self):
     data = np.arange(10).reshape((2, 5))

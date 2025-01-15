@@ -354,7 +354,7 @@ class InverseShiftAndNormalize(TransformABC):
     return cls(shifts=shifts, scales=scales)
 
 
-class TakeSurfaceAdjacentSgimaLevel(TransformABC):
+class TakeSurfaceAdjacentSigmaLevel(TransformABC):
   """Takes surface adjacent sigma level from the input."""
 
   def __call__(self, inputs: typing.Pytree) -> typing.Pytree:

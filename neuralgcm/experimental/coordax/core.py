@@ -237,9 +237,6 @@ class NamedAxis(Coordinate, struct.Struct):
   name: str = dataclasses.field(metadata={'pytree_node': False})
   size: int = dataclasses.field(metadata={'pytree_node': False})
 
-  name: str
-  size: int
-
   @property
   def dims(self) -> tuple[str, ...]:
     return (self.name,)

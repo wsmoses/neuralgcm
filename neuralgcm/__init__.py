@@ -44,4 +44,4 @@ import neuralgcm.towers
 
 from neuralgcm.api import PressureLevelModel
 
-__version__ = "1.1.1"  # keep in sync with pyproject.toml
+__version__ = "1.1.2"  # keep in sync with pyproject.toml

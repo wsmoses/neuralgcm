@@ -454,6 +454,23 @@ class CoreTest(parameterized.TestCase):
         coord_field_keys=set(['y']),
     )
 
+  def test_jit(self):
+    trace_count = 0
+
+    @jax.jit
+    def f(x):
+      nonlocal trace_count
+      trace_count += 1
+      return x
+
+    field = coordax.wrap(np.arange(3), 'x')
+    actual = f(field)
+    testing.assert_fields_allclose(actual=actual, desired=field)
+    self.assertEqual(trace_count, 1)
+
+    f(field + 1)  # should not be traced again
+    self.assertEqual(trace_count, 1)
+
   def test_jax_transforms(self):
     """Tests that vmap/scan work with Field with leading positional axes."""
     x_coord = coordax.LabeledAxis('x', np.array([2, 3, 7]))

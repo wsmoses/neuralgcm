@@ -28,7 +28,6 @@ import jax
 from neuralgcm.experimental import coordax as cx
 from neuralgcm.experimental import typing
 import numpy as np
-from penzai.core import struct
 
 
 SphericalHarmonicsImpl = spherical_harmonic.SphericalHarmonicsImpl
@@ -37,7 +36,7 @@ FastSphericalHarmonics = spherical_harmonic.FastSphericalHarmonics
 P = jax.sharding.PartitionSpec
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass(frozen=True)
 class ArrayKey:
   """Wrapper for a numpy array to make it hashable."""
 
@@ -51,22 +50,17 @@ class ArrayKey:
         and (self.value == other.value).all()
     )
 
-  def __ne__(self, other):
-    return not self == other
-
   def __hash__(self) -> int:
     return hash((self.value.shape, self.value.tobytes()))
 
 
-@jax.tree_util.register_pytree_node_class
-@dataclasses.dataclass
+@jax.tree_util.register_static
+@dataclasses.dataclass(frozen=True)
 class TimeDelta(cx.Coordinate):
   """Coordinates that discretize data along static relative time."""
 
-  time: np.ndarray = dataclasses.field(metadata={'pytree_node': False})
-  offset: float = dataclasses.field(
-      default=0.0, metadata={'pytree_node': False}
-  )
+  time: np.ndarray
+  offset: float = 0.0
 
   @property
   def dims(self):
@@ -87,26 +81,11 @@ class TimeDelta(cx.Coordinate):
   def _components(self):
     return (self.offset, ArrayKey(self.time))
 
-  def tree_flatten(self):
-    """Flattens TimeDelta."""
-    aux_data = self._components()
-    return (), aux_data
-
-  @classmethod
-  def tree_unflatten(cls, aux_data, leaves):
-    """Unflattens TimeDelta."""
-    del leaves  # unused
-    offset, array_key = aux_data
-    return cls(offset=offset, time=array_key.value)
-
   def __eq__(self, other):
     return (
         isinstance(other, TimeDelta)
         and self._components() == other._components()
     )
-
-  def __ne__(self, other):
-    return not self == other
 
   def __hash__(self) -> int:
     return hash(self._components())
@@ -118,35 +97,26 @@ class TimeDelta(cx.Coordinate):
 
 
 # TODO(dkochkov) Consider leaving out spherical_harmonics_impl from repr.
-@struct.pytree_dataclass
-class LonLatGrid(cx.Coordinate, struct.Struct):
+@jax.tree_util.register_static
+@dataclasses.dataclass(frozen=True)
+class LonLatGrid(cx.Coordinate):
   """Coordinates that discretize data as point values on lon-lat grid."""
 
-  longitude_nodes: int = dataclasses.field(metadata={'pytree_node': False})
-  latitude_nodes: int = dataclasses.field(metadata={'pytree_node': False})
-  latitude_spacing: str = dataclasses.field(
-      default='gauss', metadata={'pytree_node': False}
-  )
-  longitude_offset: float = dataclasses.field(
-      default=0.0, metadata={'pytree_node': False}
-  )
-  radius: float | None = dataclasses.field(
-      default=None, metadata={'pytree_node': False}
-  )
+  longitude_nodes: int
+  latitude_nodes: int
+  latitude_spacing: str = 'gauss'
+  longitude_offset: float = 0.0
+  radius: float | None = None
   spherical_harmonics_impl: SphericalHarmonicsImpl = dataclasses.field(
-      default=FastSphericalHarmonics,
-      kw_only=True,
-      metadata={'pytree_node': False},
+      default=FastSphericalHarmonics, kw_only=True
   )
   longitude_wavenumbers: int = dataclasses.field(
-      default=0, repr=False, kw_only=True, metadata={'pytree_node': False}
+      default=0, repr=False, kw_only=True
   )
   total_wavenumbers: int = dataclasses.field(
-      default=0, repr=False, kw_only=True, metadata={'pytree_node': False}
+      default=0, repr=False, kw_only=True
   )
-  _ylm_grid: spherical_harmonic.Grid = dataclasses.field(
-      init=False, repr=False, metadata={'pytree_node': False}
-  )
+  _ylm_grid: spherical_harmonic.Grid = dataclasses.field(init=False, repr=False)
 
   def __post_init__(self):
     ylm_grid = spherical_harmonic.Grid(
@@ -363,37 +333,24 @@ class LonLatGrid(cx.Coordinate, struct.Struct):
     return cls.construct(max_wavenumber=1279, gaussian_nodes=640, **kwargs)
 
 
-@struct.pytree_dataclass
-class SphericalHarmonicGrid(cx.Coordinate, struct.Struct):
+@jax.tree_util.register_static
+@dataclasses.dataclass(frozen=True)
+class SphericalHarmonicGrid(cx.Coordinate):
   """Coordinates that discretize data as spherical harmonic coefficients."""
 
-  longitude_wavenumbers: int = dataclasses.field(
-      metadata={'pytree_node': False}
-  )
-  total_wavenumbers: int = dataclasses.field(metadata={'pytree_node': False})
-  longitude_offset: float = dataclasses.field(
-      default=0.0, metadata={'pytree_node': False}
-  )
-  radius: float | None = dataclasses.field(
-      default=None, metadata={'pytree_node': False}
-  )
+  longitude_wavenumbers: int
+  total_wavenumbers: int
+  longitude_offset: float = 0.0
+  radius: float | None = None
   spherical_harmonics_impl: SphericalHarmonicsImpl = dataclasses.field(
-      default=FastSphericalHarmonics,
-      kw_only=True,
-      metadata={'pytree_node': False},
+      default=FastSphericalHarmonics, kw_only=True
   )
-  longitude_nodes: int = dataclasses.field(
-      default=0, repr=False, kw_only=True, metadata={'pytree_node': False}
-  )
-  latitude_nodes: int = dataclasses.field(
-      default=0, repr=False, kw_only=True, metadata={'pytree_node': False}
-  )
+  longitude_nodes: int = dataclasses.field(default=0, repr=False, kw_only=True)
+  latitude_nodes: int = dataclasses.field(default=0, repr=False, kw_only=True)
   latitude_spacing: str = dataclasses.field(
-      default='gauss', repr=False, kw_only=True, metadata={'pytree_node': False}
+      default='gauss', repr=False, kw_only=True
   )
-  _ylm_grid: spherical_harmonic.Grid = dataclasses.field(
-      init=False, repr=False, metadata={'pytree_node': False}
-  )
+  _ylm_grid: spherical_harmonic.Grid = dataclasses.field(init=False, repr=False)
 
   def __post_init__(self):
     ylm_grid = spherical_harmonic.Grid(
@@ -646,22 +603,19 @@ class SphericalHarmonicGrid(cx.Coordinate, struct.Struct):
 #
 
 
-@jax.tree_util.register_pytree_node_class
-@dataclasses.dataclass
+@jax.tree_util.register_static
+@dataclasses.dataclass(frozen=True)
 class SigmaLevels(cx.Coordinate):
   """Coordinates that discretize data as fraction of the surface pressure."""
 
-  boundaries: np.ndarray = dataclasses.field(metadata={'pytree_node': False})
+  boundaries: np.ndarray
   sigma_levels: sigma_coordinates.SigmaCoordinates = dataclasses.field(
-      init=False,
-      repr=False,
-      compare=False,
-      metadata={'pytree_node': False},
+      init=False, repr=False, compare=False
   )
 
   def __init__(self, boundaries: Iterable[float] | np.ndarray):
     boundaries = np.asarray(boundaries)
-    self.boundaries = boundaries
+    object.__setattr__(self, 'boundaries', boundaries)
     self.__post_init__()
 
   def __post_init__(self):
@@ -688,26 +642,11 @@ class SigmaLevels(cx.Coordinate):
   def _components(self):
     return (ArrayKey(self.boundaries),)
 
-  def tree_flatten(self):
-    """Flattens SigmaLevels."""
-    aux_data = self._components()
-    return (), aux_data
-
-  @classmethod
-  def tree_unflatten(cls, aux_data, leaves):
-    """Unflattens SigmaLevels."""
-    del leaves  # unused
-    (boundaries_key,) = aux_data
-    return cls(boundaries=boundaries_key.value)
-
   def __eq__(self, other):
     return (
         isinstance(other, SigmaLevels)
         and self._components() == other._components()
     )
-
-  def __ne__(self, other):
-    return not self == other
 
   def __hash__(self) -> int:
     return hash(self._components())
@@ -729,24 +668,19 @@ class SigmaLevels(cx.Coordinate):
     return cls(boundaries=boundaries)
 
 
-@jax.tree_util.register_pytree_node_class
-@dataclasses.dataclass
+@jax.tree_util.register_static
+@dataclasses.dataclass(frozen=True)
 class PressureLevels(cx.Coordinate):
   """Coordinates that discretize data per pressure levels."""
 
-  centers: np.ndarray = dataclasses.field(metadata={'pytree_node': False})
+  centers: np.ndarray
   pressure_levels: vertical_interpolation.PressureCoordinates = (
-      dataclasses.field(
-          init=False,
-          repr=False,
-          compare=False,
-          metadata={'pytree_node': False},
-      )
+      dataclasses.field(init=False, repr=False, compare=False)
   )
 
   def __init__(self, centers: Iterable[float] | np.ndarray):
     centers = np.asarray(centers)
-    self.centers = centers
+    object.__setattr__(self, 'centers', centers)
     self.__post_init__()
 
   def __post_init__(self):
@@ -773,26 +707,11 @@ class PressureLevels(cx.Coordinate):
   def _components(self):
     return (ArrayKey(self.centers),)
 
-  def tree_flatten(self):
-    """Flattens PressureLevels."""
-    aux_data = self._components()
-    return (), aux_data
-
-  @classmethod
-  def tree_unflatten(cls, aux_data, leaves):
-    """Unflattens PressureLevels."""
-    del leaves  # unused
-    (centers,) = aux_data
-    return cls(centers=centers.value)
-
   def __eq__(self, other):
     return (
         isinstance(other, PressureLevels)
         and self._components() == other._components()
     )
-
-  def __ne__(self, other):
-    return not self == other
 
   def __hash__(self) -> int:
     return hash(self._components())
@@ -805,11 +724,12 @@ class PressureLevels(cx.Coordinate):
     return cls(centers=pressure_levels.centers)
 
 
-@struct.pytree_dataclass
-class LayerLevels(cx.Coordinate, struct.Struct):
+@jax.tree_util.register_static
+@dataclasses.dataclass(frozen=True)
+class LayerLevels(cx.Coordinate):
   """Coordinates that discretize data by index of unstructured layer."""
 
-  n_layers: int = dataclasses.field(metadata={'pytree_node': False})
+  n_layers: int
 
   @property
   def dims(self):
@@ -829,8 +749,9 @@ class LayerLevels(cx.Coordinate, struct.Struct):
 #
 
 
-@struct.pytree_dataclass
-class DinosaurCoordinates(cx.CartesianProduct, struct.Struct):
+@jax.tree_util.register_static
+@dataclasses.dataclass(frozen=True)
+class DinosaurCoordinates(cx.CartesianProduct):
   """Coordinate that is product of horizontal & vertical coorinates.
 
   This combined coordinate object is useful for compactly keeping track of the
@@ -838,21 +759,11 @@ class DinosaurCoordinates(cx.CartesianProduct, struct.Struct):
   representation of the spherical shell data.
   """
 
-  coordinates: tuple[cx.Coordinate, ...] = dataclasses.field(
-      init=False, metadata={'pytree_node': False}
-  )
-  horizontal: LonLatGrid | SphericalHarmonicGrid = dataclasses.field(
-      metadata={'pytree_node': False}
-  )
-  vertical: SigmaLevels | PressureLevels | LayerLevels = dataclasses.field(
-      metadata={'pytree_node': False}
-  )
-  dycore_partition_spec: jax.sharding.PartitionSpec = dataclasses.field(
-      metadata={'pytree_node': False}, default=P('z', 'x', 'y')
-  )
-  physics_partition_spec: jax.sharding.PartitionSpec = dataclasses.field(
-      metadata={'pytree_node': False}, default=P(None, ('x', 'z'), 'y')
-  )
+  coordinates: tuple[cx.Coordinate, ...] = dataclasses.field(init=False)
+  horizontal: LonLatGrid | SphericalHarmonicGrid = dataclasses.field()
+  vertical: SigmaLevels | PressureLevels | LayerLevels = dataclasses.field()
+  dycore_partition_spec: jax.sharding.PartitionSpec = P('z', 'x', 'y')
+  physics_partition_spec: jax.sharding.PartitionSpec = P(None, ('x', 'z'), 'y')
 
   def __init__(
       self,
@@ -864,10 +775,10 @@ class DinosaurCoordinates(cx.CartesianProduct, struct.Struct):
       ),
   ):
     super().__init__(coordinates=(vertical, horizontal))
-    self.horizontal = horizontal
-    self.vertical = vertical
-    self.dycore_partition_spec = dycore_partition_spec
-    self.physics_partition_spec = physics_partition_spec
+    object.__setattr__(self, 'horizontal', horizontal)
+    object.__setattr__(self, 'vertical', vertical)
+    object.__setattr__(self, 'dycore_partition_spec', dycore_partition_spec)
+    object.__setattr__(self, 'physics_partition_spec', physics_partition_spec)
 
   @property
   def dims(self):

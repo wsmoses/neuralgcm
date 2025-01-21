@@ -34,7 +34,6 @@ import jax
 import jax.numpy as jnp
 from neuralgcm.experimental.coordax import named_axes
 import numpy as np
-from penzai.core import struct
 
 
 Pytree: TypeAlias = Any
@@ -46,6 +45,16 @@ class Coordinate(abc.ABC):
   Coordinate subclasses are expected to obey several invariants:
   1. Dimension names may not be repeated: `len(set(dims)) == len(dims)`
   2. All dimensions must be named: `len(shape) == len(dims)`
+
+  Every non-abstract Coordinate subclass must be registered as a "static"
+  pytree node, e.g., by decorating the class with
+  `@jax.tree_util.register_static`. Static pytrees nodes must implement
+  `__hash__` and `__eq__` according to the requirements of keys in Python
+  dictionaries. This is easiest to acheive with frozen dataclasses, but care
+  must be taken when working with np.ndarray attributes.
+
+  TODO(shoyer): add documentation examples, including a version using ArrayKey
+  to wrap np.ndarray attributions.
   """
 
   @property
@@ -76,7 +85,7 @@ class Coordinate(abc.ABC):
     return len(self.dims)
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass(frozen=True)
 class ArrayKey:
   """Wrapper for a numpy array to make it hashable."""
 
@@ -90,15 +99,13 @@ class ArrayKey:
         and (self.value == other.value).all()
     )
 
-  def __ne__(self, other):
-    return not self == other
-
   def __hash__(self) -> int:
     return hash((self.value.shape, self.value.tobytes()))
 
 
-@struct.pytree_dataclass
-class SelectedAxis(Coordinate, struct.Struct):
+@jax.tree_util.register_static
+@dataclasses.dataclass(frozen=True)
+class SelectedAxis(Coordinate):
   """Coordinate that exposes one dimension of a multidimensional coordinate."""
 
   coordinate: Coordinate
@@ -174,13 +181,12 @@ def consolidate_coordinates(*coordinates: Coordinate) -> tuple[Coordinate, ...]:
 
 
 # TODO(shoyer): drop penzai.struct dependency
-@struct.pytree_dataclass
-class CartesianProduct(Coordinate, struct.Struct):
+@jax.tree_util.register_static
+@dataclasses.dataclass(frozen=True)
+class CartesianProduct(Coordinate):
   """Coordinate defined as the outer product of independent coordinates."""
 
-  coordinates: tuple[Coordinate, ...] = dataclasses.field(
-      metadata={'pytree_node': False}
-  )
+  coordinates: tuple[Coordinate, ...]
 
   def __post_init__(self):
     new_coordinates = []
@@ -229,12 +235,13 @@ class CartesianProduct(Coordinate, struct.Struct):
     )
 
 
-@struct.pytree_dataclass
-class NamedAxis(Coordinate, struct.Struct):
+@jax.tree_util.register_static
+@dataclasses.dataclass(frozen=True)
+class NamedAxis(Coordinate):
   """One dimensional coordinate that only dimension size."""
 
-  name: str = dataclasses.field(metadata={'pytree_node': False})
-  size: int = dataclasses.field(metadata={'pytree_node': False})
+  name: str
+  size: int
 
   @property
   def dims(self) -> tuple[str, ...]:
@@ -254,9 +261,9 @@ class NamedAxis(Coordinate, struct.Struct):
 
 # TODO(dkochkov): consider using @struct.pytree_dataclass here and storing
 # tuple values instead of np.ndarray (which could be exposed as a property).
-@jax.tree_util.register_pytree_node_class
-@dataclasses.dataclass
-class LabeledAxis(Coordinate):  # pytype: disable=final-error
+@jax.tree_util.register_static
+@dataclasses.dataclass(frozen=True)
+class LabeledAxis(Coordinate):
   """One dimensional coordinate with custom coordinate values."""
 
   name: str
@@ -277,26 +284,11 @@ class LabeledAxis(Coordinate):  # pytype: disable=final-error
   def _components(self):
     return (self.name, ArrayKey(self.ticks))
 
-  def tree_flatten(self):
-    """Flattens LabeledAxis."""
-    aux_data = self._components()
-    return (), aux_data
-
-  @classmethod
-  def tree_unflatten(cls, aux_data, leaves):
-    """Unflattens LabeledAxis."""
-    del leaves  # unused
-    name, array_key = aux_data
-    return cls(name=name, ticks=array_key.value)
-
   def __eq__(self, other):
     return (
         isinstance(other, LabeledAxis)
         and self._components() == other._components()
     )
-
-  def __ne__(self, other):
-    return not self == other
 
   def __hash__(self) -> int:
     return hash(self._components())
@@ -589,7 +581,7 @@ class Field:
 
   def tree_flatten(self):
     """Flatten this object for JAX pytree operations."""
-    return [self.named_array], self.coords
+    return [self.named_array], tuple(self.coords.items())
 
   @classmethod
   def tree_unflatten(cls, coords, leaves) -> Self:
@@ -597,7 +589,7 @@ class Field:
     [named_array] = leaves
     result = object.__new__(cls)
     result._named_array = named_array
-    result._coords = coords
+    result._coords = dict(coords)
     if isinstance(named_array.data, jnp.ndarray):
       result._check_valid()
     return result

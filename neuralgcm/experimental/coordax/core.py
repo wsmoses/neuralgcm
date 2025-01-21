@@ -28,7 +28,6 @@ import dataclasses
 import functools
 import operator
 import textwrap
-import types
 from typing import Any, Callable, Mapping, Self, TypeAlias, TypeGuard
 
 import jax

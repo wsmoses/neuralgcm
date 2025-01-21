@@ -85,7 +85,7 @@ class InstantDiagnostic(DiagnosticModule):
     self.diagnostic_name = diagnostic_name
     self.coords = diagnostic_coords
     self.extract_fn = extract_fn
-    self.instant = DiagnosticValue(self.coords.shape)
+    self.instant = DiagnosticValue(jnp.zeros(self.coords.shape))
 
   def format_diagnostics(self, time: typing.Array) -> typing.Pytree:
     return {

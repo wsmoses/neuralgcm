@@ -84,6 +84,14 @@ class Coordinate(abc.ABC):
     """Dimensionality of the coordinate."""
     return len(self.dims)
 
+  @property
+  def axes(self) -> tuple[Coordinate, ...]:
+    """Tuple of one-dimensional Coordinate objects for each dimension."""
+    if self.ndim == 1:
+      return (self,)
+    else:
+      return tuple(SelectedAxis(self, i) for i in range(self.ndim))
+
 
 @dataclasses.dataclass(frozen=True)
 class ArrayKey:
@@ -131,11 +139,6 @@ class SelectedAxis(Coordinate):
   def fields(self) -> dict[str, Field]:
     """A maps from field names to their values."""
     return self.coordinate.fields
-
-  @property
-  def ndim(self) -> int:
-    """Dimensionality of the coordinate."""
-    return 1
 
   def __repr__(self):
     return f'coordax.SelectedAxis({self.coordinate!r}, axis={self.axis})'
@@ -191,14 +194,7 @@ class CartesianProduct(Coordinate):
   def __post_init__(self):
     new_coordinates = []
     for c in self.coordinates:
-      if isinstance(c, CartesianProduct):
-        # c.coordinates are already Axiss where needed.
-        new_coordinates.extend(c.coordinates)
-      elif c.ndim > 1:
-        for i in range(c.ndim):
-          new_coordinates.append(SelectedAxis(c, i))
-      else:
-        new_coordinates.append(c)
+      new_coordinates.extend(c.axes)
     combined_coordinates = consolidate_coordinates(*new_coordinates)
     if len(combined_coordinates) <= 1:
       raise ValueError('CartesianProduct must contain more than 1 component')
@@ -233,6 +229,11 @@ class CartesianProduct(Coordinate):
     return functools.reduce(
         operator.or_, [c.fields for c in self.coordinates], {}
     )
+
+  @property
+  def axes(self) -> tuple[Coordinate, ...]:
+    """Returns a tuple of Axis objects for each dimension."""
+    return self.coordinates
 
 
 @jax.tree_util.register_static

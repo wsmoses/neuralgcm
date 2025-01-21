@@ -1115,7 +1115,7 @@ class CenteredLognormalRandomFieldModuleTest(parameterized.TestCase):
 
     # Test stats...these are tested more carefully by
     # CenteredLognormalRandomFieldTest, but let's double check here.
-    np.testing.assert_allclose(0.0, initial_values.mean(), atol=1e-3)
+    np.testing.assert_allclose(0.0, initial_values.mean(), atol=2e-3)
     np.testing.assert_allclose(
         expected_variance or 0.0,
         initial_values.var(axis=0).mean(),

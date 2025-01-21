@@ -53,7 +53,7 @@ class CumulativeDiagnostic(DiagnosticModule):
       self,
       diagnostic_name: str,
       diagnostic_coords: cx.Coordinate,
-      extract_fn=lambda x: x,
+      extract_fn=lambda x, *args, **kwargs: x,
   ):
     self.diagnostic_name = diagnostic_name
     self.coords = diagnostic_coords
@@ -67,8 +67,10 @@ class CumulativeDiagnostic(DiagnosticModule):
         )
     }
 
-  def __call__(self, inputs):
-    self.cumulative.value = self.cumulative.value + self.extract_fn(inputs)
+  def __call__(self, inputs, *args, **kwargs):
+    self.cumulative.value = self.cumulative.value + self.extract_fn(
+        inputs, *args, **kwargs
+    )
 
 
 class InstantDiagnostic(DiagnosticModule):
@@ -78,7 +80,7 @@ class InstantDiagnostic(DiagnosticModule):
       self,
       diagnostic_name: str,
       diagnostic_coords: cx.Coordinate,
-      extract_fn=lambda x: x,
+      extract_fn=lambda x, *args, **kwargs: x,
   ):
     self.diagnostic_name = diagnostic_name
     self.coords = diagnostic_coords
@@ -92,8 +94,8 @@ class InstantDiagnostic(DiagnosticModule):
         )
     }
 
-  def __call__(self, inputs):
-    self.instant.value = self.extract_fn(inputs)
+  def __call__(self, inputs, *args, **kwargs):
+    self.instant.value = self.extract_fn(inputs, *args, **kwargs)
 
 
 class IntervalDiagnostic(DiagnosticModule):
@@ -105,7 +107,7 @@ class IntervalDiagnostic(DiagnosticModule):
       diagnostic_name: str,
       interval_length: int,
       diagnostic_coords: cx.Coordinate,
-      extract_fn=lambda x: x,
+      extract_fn=lambda x, *args, **kwargs: x,
   ):
     self.diagnostic_name = diagnostic_name
     self.coords = diagnostic_coords
@@ -133,5 +135,7 @@ class IntervalDiagnostic(DiagnosticModule):
         )
     }
 
-  def __call__(self, inputs):
-    self.cumulative.value = self.cumulative.value + self.extract_fn(inputs)
+  def __call__(self, inputs, *args, **kwargs):
+    self.cumulative.value = self.cumulative.value + self.extract_fn(
+        inputs, *args, **kwargs
+    )

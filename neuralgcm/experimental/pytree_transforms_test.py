@@ -20,6 +20,7 @@ from typing import Any, Sequence
 from absl.testing import absltest
 from absl.testing import parameterized
 import chex
+from dinosaur import primitive_equations
 from flax import nnx
 import jax
 import jax.numpy as jnp
@@ -510,6 +511,51 @@ class InputsFeaturesTest(parameterized.TestCase):
         'log_surface_pressure': np.ones((1,) + coords.horizontal.shape),
     }
     self._test_feature_module(pressure_features, inputs)
+
+
+class PrecipitationminusEvaporationTest(parameterized.TestCase):
+  """Tests PrecipitationminusEvaporation calculations."""
+
+  def test_shape_and_value(self):
+    """Tests that the output dimensions and values are correct."""
+    sim_units = units.DEFAULT_UNITS
+    coords = coordinates.DinosaurCoordinates(
+        horizontal=coordinates.LonLatGrid.T21(),
+        vertical=coordinates.SigmaLevels.equidistant(layers=8),
+    )
+    state = primitive_equations.State(
+        divergence=np.ones(coords.shape),
+        vorticity=np.ones(coords.shape),
+        log_surface_pressure=np.zeros(coords.horizontal.shape),
+        temperature_variation=np.ones(coords.shape),
+        tracers={
+            'specific_humidity': np.ones(coords.shape),
+            'specific_cloud_ice_water_content': np.ones(coords.shape),
+            'specific_cloud_liquid_water_content': np.ones(
+                coords.shape
+            ),
+        },
+    )
+    expected_outputs = (
+        np.ones(coords.horizontal.shape)
+        * 3
+        / sim_units.gravity_acceleration
+    )
+
+    pme = pytree_transforms.PrecipitationMinusEvaporation(
+        grid=coords.horizontal,
+        level=coords.vertical,
+        sim_units=sim_units,
+    )
+    input_state_modal = coords.horizontal.ylm_grid.to_modal(state)
+    inputs_tendency_modal = coords.horizontal.ylm_grid.to_modal(state)
+    outputs = pme(tendencies=inputs_tendency_modal, state=input_state_modal)
+
+    with self.subTest('shape'):
+      self.assertEqual(outputs.shape, expected_outputs.shape)
+
+    with self.subTest('value'):
+      np.testing.assert_allclose(outputs, expected_outputs, rtol=1e-5)
 
 if __name__ == '__main__':
   absltest.main()

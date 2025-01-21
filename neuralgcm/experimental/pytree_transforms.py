@@ -32,6 +32,7 @@ import re
 from typing import Callable, Protocol, Sequence
 
 from dinosaur import radiation
+from dinosaur import sigma_coordinates
 from dinosaur import spherical_harmonic
 from flax import nnx
 import jax
@@ -1266,3 +1267,52 @@ class CombinedFeatures(TransformABC):
     for m in self.feature_modules.values():
       out_shapes |= m.output_shapes(input_shapes)
     return self.transform.output_shapes(out_shapes)
+
+
+class PrecipitationMinusEvaporation(TransformABC):
+  """Diagnosing precipitation minus evaporation from corrector predictions."""
+
+  def __init__(
+      self,
+      grid: coordinates.SphericalHarmonicGrid,
+      level: coordinates.SigmaLevels,
+      sim_units: units.SimUnits,
+      moisture_species: tuple[str, ...] = (
+          'specific_humidity',
+          'specific_cloud_ice_water_content',
+          'specific_cloud_liquid_water_content',
+      ),
+  ):
+    self.moisture_species = moisture_species
+    self.grid = grid
+    self.sim_units = sim_units
+    self.level = level
+
+  def _compute_evaporation_minus_precipitation(
+      self, tendencies: typing.Pytree, state: typing.Pytree
+  ) -> typing.Array:
+    lsp = state.log_surface_pressure
+    p_surface = jnp.squeeze(
+        jnp.exp(self.grid.ylm_grid.to_nodal(lsp))
+    )
+    scale = p_surface / self.sim_units.gravity_acceleration
+    moisture_tendencies = [
+        v
+        for tracer, v in tendencies.tracers.items()
+        if tracer in self.moisture_species
+    ]
+    moisture_tendencies_nodal = self.grid.ylm_grid.to_nodal(
+        moisture_tendencies
+    )
+    moisture_tendencies_sum = sum(moisture_tendencies_nodal)
+    # TODO(dkochkov): add sigma integral method to SigmaLevels.
+    e_minus_p = scale * sigma_coordinates.sigma_integral(
+        moisture_tendencies_sum,
+        self.level.sigma_levels,
+        keepdims=False,
+    )
+    return e_minus_p
+
+  def __call__(self, tendencies: typing.Pytree, state: typing.Pytree):
+    e_minus_p = self._compute_evaporation_minus_precipitation(tendencies, state)
+    return e_minus_p

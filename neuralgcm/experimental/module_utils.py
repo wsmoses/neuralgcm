@@ -66,7 +66,7 @@ def with_callback(
     callback_fn = getattr(
         self.callback_specs.module, self.callback_specs.method_name
     )
-    callback_fn(result)
+    callback_fn(result, *args, **kwargs)
     return result
 
   attrs = {

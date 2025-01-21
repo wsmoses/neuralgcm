@@ -13,7 +13,7 @@
 # limitations under the License.
 """Modules for standard NN layers: MLP, Convolutions, Pooling, etc."""
 
-from typing import Callable, Protocol, Sequence
+from typing import Callable, Literal, Protocol, Sequence
 
 from flax import nnx
 from flax import typing as flax_typing
@@ -25,6 +25,9 @@ Array = typing.Array
 
 default_w_init = nnx.initializers.lecun_normal()
 default_b_init = nnx.initializers.zeros_init()
+
+ResizeMode = Literal['upsample', 'downsample']
+ResizeMethod = Literal['bilinear', 'nearest', 'cubic', 'lanczos3', 'lanczos5']
 
 
 class UnaryLayer(Protocol):
@@ -348,3 +351,41 @@ class ConvLonLat(nnx.Module):
     )
     outputs = self.conv_layer(inputs).squeeze(axis=0)
     return jnp.moveaxis(outputs, -1, 0)
+
+
+class ResizeLonLat(nnx.Module):
+  """Layer to resize array inputs."""
+
+  def __init__(
+      self,
+      resize_ratio: tuple[int, int] = (2, 2),
+      *,
+      mode: ResizeMode,
+      method: ResizeMethod = 'bilinear',
+  ):
+    self.resize_ratio = resize_ratio
+    self.method = method
+    self.mode = mode
+
+  def __call__(self, inputs: typing.Array):
+
+    fixed_shape, lon_lat_shape = inputs.shape[:-2], inputs.shape[-2:]
+    if self.mode == 'upsample':
+      lon_lat_shape = jax.tree.map(
+          lambda x, s: x * s, lon_lat_shape, self.resize_ratio
+      )
+
+    elif self.mode == 'downsample':
+      div_fn = lambda x, y: divmod(x, y)[0]
+      mod_fn = lambda x, y: divmod(x, y)[1]
+      lon_lat_shape = jax.tree.map(div_fn, lon_lat_shape, self.resize_ratio)
+      remainders = jax.tree.map(mod_fn, lon_lat_shape, self.resize_ratio)
+      if remainders != (0, 0):
+        raise ValueError(
+            f'{lon_lat_shape=} is not divisible by {self.resize_ratio=}'
+        )
+    else:
+      raise ValueError(f'Invalid mode: {self.mode}')
+    return jax.image.resize(
+        inputs, fixed_shape + lon_lat_shape, method=self.method
+    )

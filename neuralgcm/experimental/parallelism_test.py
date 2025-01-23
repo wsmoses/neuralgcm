@@ -196,6 +196,78 @@ class MeshTest(parameterized.TestCase):
       mesh.with_sharding_constraint(input_pytree, 'vertical')
 
 
+class HelperFunctionsTest(parameterized.TestCase):
+  """Tests helper functions for dycore and physics constraints on arrays."""
+
+  def test_dycore_sharding(self):
+    spmd_mesh = jax.sharding.Mesh(
+        np.array(jax.devices()).reshape((2, 2, 2)), axis_names=['z', 'x', 'y']
+    )
+    array_partitions = {
+        'dycore_3d': ('z', 'x', 'y'),
+        'dycore_3d_surface': (None, 'x', 'y'),
+        'dycore_2d': ('x', 'y'),
+    }
+    mesh = parallelism.Mesh(
+        spmd_mesh=spmd_mesh, array_partitions=array_partitions
+    )
+    inputs = {
+        'volume': np.ones((8, 32, 16)),
+        'surface': np.ones((1, 32, 16)),
+        '2d_surface': np.ones((32, 16)),
+        'rng': jax.random.PRNGKey(0),
+    }
+    with mesh.spmd_mesh:
+      sharded_inputs = parallelism.with_dycore_sharding(mesh, inputs)
+      volume_shard_shape = sharded_inputs['volume'].sharding.shard_shape(
+          (8, 32, 16)
+      )
+      self.assertEqual(volume_shard_shape, (8 // 2, 32 // 2, 16 // 2))
+      surface_shard_shape = sharded_inputs['surface'].sharding.shard_shape(
+          (1, 32, 16)
+      )
+      self.assertEqual(surface_shard_shape, (1, 32 // 2, 16 // 2))
+      two_d_shard_shape = sharded_inputs['2d_surface'].sharding.shard_shape(
+          (32, 16)
+      )
+      self.assertEqual(two_d_shard_shape, (32 // 2, 16 // 2))
+      rng_shard_shape = sharded_inputs['rng'].sharding.shard_shape((2,))
+      self.assertEqual(rng_shard_shape, (2,))
+
+  def test_physics_sharding(self):
+    spmd_mesh = jax.sharding.Mesh(
+        np.array(jax.devices()).reshape((2, 2, 2)), axis_names=['z', 'x', 'y']
+    )
+    array_partitions = {
+        'physics_3d': (None, ('x', 'z'), 'y'),
+        'physics_2d': (('x', 'z'), 'y')}
+    mesh = parallelism.Mesh(
+        spmd_mesh=spmd_mesh, array_partitions=array_partitions
+    )
+    inputs = {
+        'volume': np.ones((8, 32, 16)),
+        'surface': np.ones((1, 32, 16)),
+        '2d_surface': np.ones((32, 16)),
+        'rng': jax.random.PRNGKey(0),
+    }
+    with mesh.spmd_mesh:
+      sharded_inputs = parallelism.with_physics_sharding(mesh, inputs)
+      volume_shard_shape = sharded_inputs['volume'].sharding.shard_shape(
+          (8, 32, 16)
+      )
+      self.assertEqual(volume_shard_shape, (8, 32 // (2 * 2), 16 // 2))
+      surface_shard_shape = sharded_inputs['surface'].sharding.shard_shape(
+          (1, 32, 16)
+      )
+      self.assertEqual(surface_shard_shape, (1, 32 // (2 * 2), 16 // 2))
+      two_d_shard_shape = sharded_inputs['2d_surface'].sharding.shard_shape(
+          (32, 16)
+      )
+      self.assertEqual(two_d_shard_shape, (32 // (2 * 2), 16 // 2))
+      rng_shard_shape = sharded_inputs['rng'].sharding.shard_shape((2,))
+      self.assertEqual(rng_shard_shape, (2,))
+
+
 if __name__ == '__main__':
   chex.set_n_cpu_devices(8)
   config.update('jax_traceback_filtering', 'off')

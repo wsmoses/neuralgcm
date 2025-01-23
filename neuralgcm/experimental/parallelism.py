@@ -17,7 +17,9 @@ import collections
 import dataclasses
 from flax import nnx
 import jax
+import jax.numpy as jnp
 from neuralgcm.experimental import coordax as cx
+from neuralgcm.experimental import pytree_utils
 from neuralgcm.experimental import typing
 import numpy as np
 
@@ -181,3 +183,65 @@ class Mesh(nnx.Module):
     p_specs = partition_spec_for_field(field, dim_partitions)
     sharding = jax.sharding.NamedSharding(self.spmd_mesh, p_specs)
     return jax.lax.with_sharding_constraint(field, sharding)
+
+
+# TODO(dkochkov): Remove these temporary functions once we can rely on imposing
+# sharding constraints on coordax.Field leaves.
+def with_dycore_sharding(
+    mesh: Mesh | None,
+    inputs: typing.PyTreeState,
+) -> typing.PyTreeState:
+  """Applies even sharding variants to inputs depending on input shape."""
+  def f(y: jax.Array) -> jax.Array:
+    assert isinstance(mesh, Mesh)  # make pytype happy.
+    if y.ndim == 1 and y.dtype == jnp.uint32:
+      return y
+    elif y.ndim == 3 and y.shape[0] != 1:
+      return mesh.with_sharding_constraint(y, 'dycore_3d')
+    elif y.ndim == 3 and y.shape[0] == 1:
+      return mesh.with_sharding_constraint(y, 'dycore_3d_surface')
+    elif y.ndim == 2:
+      return mesh.with_sharding_constraint(y, 'dycore_2d')
+    else:
+      raise ValueError(f'Unsupported array shape: {y.shape}')
+
+  if mesh is None:
+    return inputs
+  return pytree_utils.tree_map_over_nonscalars(f, inputs)
+
+
+def with_physics_sharding(
+    mesh: Mesh | None,
+    inputs: typing.PyTreeState,
+) -> typing.PyTreeState:
+  """Applies horizontal sharding variants depending on input shape."""
+  def f(y: jax.Array) -> jax.Array:
+    assert isinstance(mesh, Mesh)  # make pytype happy.
+    if y.ndim == 1 and y.dtype == jnp.uint32:
+      return y
+    elif y.ndim == 3:
+      return mesh.with_sharding_constraint(y, 'physics_3d')
+    elif y.ndim == 2:
+      return mesh.with_sharding_constraint(y, 'physics_2d')
+    else:
+      raise ValueError(f'Unsupported array shape: {y.shape}')
+
+  if mesh is None:
+    return inputs
+  return pytree_utils.tree_map_over_nonscalars(f, inputs)
+
+
+def with_dycore_to_physics_sharding(
+    mesh: Mesh | None,
+    inputs: typing.PyTreeState,
+) -> typing.PyTreeState:
+  """Applies dycore sharding followed by physics sharding constraints."""
+  return with_physics_sharding(mesh, with_dycore_sharding(mesh, inputs))
+
+
+def with_physics_to_dycore_sharding(
+    mesh: Mesh | None,
+    inputs: typing.PyTreeState,
+) -> typing.PyTreeState:
+  """Applies physics sharding followed by dycore sharding constraints."""
+  return with_dycore_sharding(mesh, with_physics_sharding(mesh, inputs))

@@ -723,6 +723,57 @@ class PressureLevels(cx.Coordinate):
   ):
     return cls(centers=pressure_levels.centers)
 
+  @classmethod
+  def with_era5_levels(cls):
+    """PressureLevels with standard 37 ERA5 pressure levels."""
+    return cls(
+        centers=[
+            1,
+            2,
+            3,
+            5,
+            7,
+            10,
+            20,
+            30,
+            50,
+            70,
+            100,
+            125,
+            150,
+            175,
+            200,
+            225,
+            250,
+            300,
+            350,
+            400,
+            450,
+            500,
+            550,
+            600,
+            650,
+            700,
+            750,
+            775,
+            800,
+            825,
+            850,
+            875,
+            900,
+            925,
+            950,
+            975,
+            1000,
+        ]
+    )
+
+  @classmethod
+  def with_13_era5_levels(cls):
+    """PressureLevels with commonly used subset of 13 ERA5 pressure levels."""
+    centers = [50, 100, 150, 200, 250, 300, 400, 500, 600, 700, 850, 925, 1000]
+    return cls(centers=centers)
+
 
 @jax.tree_util.register_static
 @dataclasses.dataclass(frozen=True)

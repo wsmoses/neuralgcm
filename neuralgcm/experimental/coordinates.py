@@ -18,16 +18,18 @@ from __future__ import annotations
 
 import dataclasses
 import math
-from typing import Any, Iterable
+from typing import Any, Iterable, Self
 
 from dinosaur import coordinate_systems as dinosaur_coordinates
 from dinosaur import sigma_coordinates
 from dinosaur import spherical_harmonic
 from dinosaur import vertical_interpolation
 import jax
+import jax.numpy as jnp
 from neuralgcm.experimental import coordax as cx
 from neuralgcm.experimental import typing
 import numpy as np
+import xarray
 
 
 SphericalHarmonicsImpl = spherical_harmonic.SphericalHarmonicsImpl
@@ -62,6 +64,9 @@ class TimeDelta(cx.Coordinate):
   time: np.ndarray
   offset: float = 0.0
 
+  def __post_init__(self):
+    object.__setattr__(self, 'time', np.asarray(self.time, dtype=np.float32))
+
   @property
   def dims(self):
     return ('timedelta',)
@@ -73,6 +78,23 @@ class TimeDelta(cx.Coordinate):
   @property
   def fields(self):
     return {'timedelta': cx.wrap(self.time, self)}
+
+  def to_xarray(self) -> dict[str, xarray.Variable]:
+    variables = super().to_xarray()
+    variables['timedelta'].attrs['offset'] = self.offset
+    return variables
+
+  @classmethod
+  def from_xarray(
+      cls, dims: tuple[str, ...], coords: xarray.Coordinates
+  ) -> Self | cx.NoCoordinateMatch:
+    dim = dims[0]
+    if dim != 'timedelta':
+      return cx.NoCoordinateMatch(f"dimension {dim!r} != 'timedelta'")
+    if coords['timedelta'].ndim != 1:
+      return cx.NoCoordinateMatch('timedelta coordinate is not a 1D array')
+    offset = float(coords['timedelta'].attrs.get('offset', 0.0))
+    return cls(time=coords['timedelta'].data, offset=offset)
 
   @classmethod
   def as_index(cls, axis_size: int, offset: float = 0.0) -> TimeDelta:
@@ -145,9 +167,11 @@ class LonLatGrid(cx.Coordinate):
 
   @property
   def fields(self):
+    lons = jnp.rad2deg(self.ylm_grid.longitudes)
+    lats = jnp.rad2deg(self.ylm_grid.latitudes)
     return {
-        k: cx.wrap(v, cx.SelectedAxis(self, i))
-        for i, (k, v) in enumerate(zip(self.dims, self.ylm_grid.nodal_axes))
+        'longitude': cx.wrap(lons, cx.SelectedAxis(self, axis=0)),
+        'latitude': cx.wrap(lats, cx.SelectedAxis(self, axis=1)),
     }
 
   def to_spherical_harmonic_grid(
@@ -331,6 +355,88 @@ class LonLatGrid(cx.Coordinate):
   @classmethod
   def TL1279(cls, **kwargs) -> LonLatGrid:
     return cls.construct(max_wavenumber=1279, gaussian_nodes=640, **kwargs)
+
+  def to_xarray(self) -> dict[str, xarray.Variable]:
+    variables = super().to_xarray()
+    metadata = dict(
+        total_wavenumbers=self.total_wavenumbers,
+        longitude_wavenumbers=self.longitude_wavenumbers,
+    )
+    if self.radius is not None:
+      metadata['radius'] = self.radius
+    variables['longitude'].attrs = metadata
+    variables['latitude'].attrs = metadata
+    return variables
+
+  @classmethod
+  def from_xarray(
+      cls, dims: tuple[str, ...], coords: xarray.Coordinates
+  ) -> Self | cx.NoCoordinateMatch:
+    if dims[:2] != ('longitude', 'latitude'):
+      return cx.NoCoordinateMatch(
+          "leading dimensions are not ('longitude', 'latitude')"
+      )
+
+    if coords['longitude'].dims != ('longitude',):
+      return cx.NoCoordinateMatch('longitude is not a 1D coordinate')
+
+    if coords['latitude'].dims != ('latitude',):
+      return cx.NoCoordinateMatch('latitude is not a 1D coordinate')
+
+    lon = coords['longitude'].data
+    lat = coords['latitude'].data
+
+    if lon.max() < 2 * np.pi:
+      return cx.NoCoordinateMatch(
+          f'expected longitude values in degrees, got {lon}'
+      )
+
+    if np.allclose(np.diff(lat), lat[1] - lat[0]):
+      if np.isclose(max(lat), 90.0):
+        latitude_spacing = 'equiangular_with_poles'
+      else:
+        latitude_spacing = 'equiangular'
+    else:
+      latitude_spacing = 'gauss'
+
+    longitude_offset = float(np.deg2rad(coords['longitude'].data[0]))
+    longitude_nodes = coords.sizes['longitude']
+    latitude_nodes = coords.sizes['latitude']
+
+    if 'radius' in coords['longitude'].attrs:
+      radius = float(coords['longitude'].attrs['radius'])
+    else:
+      radius = None
+    total_wavenumbers = int(
+        coords['longitude'].attrs.get('total_wavenumbers', 0)
+    )
+    longitude_wavenumbers = int(
+        coords['longitude'].attrs.get('longitude_wavenumbers', 0)
+    )
+    result = cls(
+        longitude_nodes=longitude_nodes,
+        latitude_nodes=latitude_nodes,
+        latitude_spacing=latitude_spacing,
+        longitude_offset=longitude_offset,
+        radius=radius,
+        total_wavenumbers=total_wavenumbers,
+        longitude_wavenumbers=longitude_wavenumbers,
+    )
+    result_lat = np.rad2deg(result._ylm_grid.latitudes)
+    if not np.allclose(result_lat, lat, atol=1e-3):
+      return cx.NoCoordinateMatch(
+          f'inferred latitudes with spacing={latitude_spacing!r} do not '
+          f' match coordinate data: {result_lat} vs {lat}'
+      )
+
+    result_lon = np.rad2deg(result._ylm_grid.longitudes)
+    if not np.allclose(result_lon, lon, atol=1e-3):
+      return cx.NoCoordinateMatch(
+          'inferred longitudes do not match coordinate data:'
+          f' {result_lon} vs {lon}'
+      )
+
+    return result
 
 
 @jax.tree_util.register_static
@@ -597,6 +703,87 @@ class SphericalHarmonicGrid(cx.Coordinate):
   def TL1279(cls, **kwargs) -> SphericalHarmonicGrid:
     return cls.construct(max_wavenumber=1279, gaussian_nodes=640, **kwargs)
 
+  def to_xarray(self) -> dict[str, xarray.Variable]:
+    variables = super().to_xarray()
+    metadata = dict(
+        longitude_offset=self.longitude_offset,
+        longitude_nodes=self.longitude_nodes,
+        latitude_nodes=self.latitude_nodes,
+        latitude_spacing=self.latitude_spacing,
+    )
+    if self.radius is not None:
+      metadata['radius'] = self.radius
+    variables['longitude_wavenumber'].attrs = metadata
+    variables['total_wavenumber'].attrs = metadata
+    return variables
+
+  @classmethod
+  def from_xarray(
+      cls, dims: tuple[str, ...], coords: xarray.Coordinates
+  ) -> Self | cx.NoCoordinateMatch:
+
+    if dims[:2] != ('longitude_wavenumber', 'total_wavenumber'):
+      return cx.NoCoordinateMatch(
+          "leading dimensions are not ('longitude_wavenumber',"
+          " 'total_wavenumber')"
+      )
+
+    if coords['longitude_wavenumber'].dims != ('longitude_wavenumber',):
+      return cx.NoCoordinateMatch('longitude_wavenumber is not a 1D coordinate')
+
+    if coords['total_wavenumber'].dims != ('total_wavenumber',):
+      return cx.NoCoordinateMatch('total_wavenumber is not a 1D coordinate')
+
+    longitude_wavenumbers = (coords.sizes['longitude_wavenumber'] + 1) // 2
+    if 'radius' in coords['longitude_wavenumber'].attrs:
+      radius = float(coords['longitude_wavenumber'].attrs['radius'])
+    else:
+      radius = None
+    longitude_offset = float(
+        coords['longitude_wavenumber'].attrs.get('longitude_offset', 0.0)
+    )
+    longitude_nodes = int(
+        coords['longitude_wavenumber'].attrs.get('longitude_nodes', 0)
+    )
+    latitude_nodes = int(
+        coords['longitude_wavenumber'].attrs.get('latitude_nodes', 0)
+    )
+    latitude_spacing = str(
+        coords['longitude_wavenumber'].attrs.get('latitude_spacing', 'gauss')
+    )
+
+    candidate = cls(
+        longitude_wavenumbers=longitude_wavenumbers,
+        total_wavenumbers=coords.sizes['total_wavenumber'],
+        radius=radius,
+        longitude_offset=longitude_offset,
+        longitude_nodes=longitude_nodes,
+        latitude_nodes=latitude_nodes,
+        latitude_spacing=latitude_spacing,
+    )
+
+    expected = candidate._ylm_grid.modal_axes[0]
+    got = coords['longitude_wavenumber'].data
+    if not np.array_equal(expected, got):
+      return cx.NoCoordinateMatch(
+          'inferred longitude wavenumbers do not match coordinate data:'
+          f' {expected} vs {got}. Perhaps you attempted to restore coordinate '
+          ' data from FastSphericalHarmonics, which does not support '
+          'restoration?'
+      )
+
+    expected = candidate._ylm_grid.modal_axes[1]
+    got = coords['total_wavenumber'].data
+    if not np.array_equal(expected, got):
+      return cx.NoCoordinateMatch(
+          f'inferred total wavenumbers do not match coordinate data: {expected}'
+          f' vs {got}. Perhaps you attempted to restore coordinate '
+          ' data from FastSphericalHarmonics, which does not support '
+          'restoration?'
+      )
+
+    return candidate
+
 
 #
 # Vertical level coordinates
@@ -614,7 +801,7 @@ class SigmaLevels(cx.Coordinate):
   )
 
   def __init__(self, boundaries: Iterable[float] | np.ndarray):
-    boundaries = np.asarray(boundaries)
+    boundaries = np.asarray(boundaries, np.float32)
     object.__setattr__(self, 'boundaries', boundaries)
     self.__post_init__()
 
@@ -667,6 +854,33 @@ class SigmaLevels(cx.Coordinate):
     boundaries = sigma_levels.boundaries
     return cls(boundaries=boundaries)
 
+  @classmethod
+  def from_centers(cls, centers: np.ndarray) -> Self:
+    sigma_levels = sigma_coordinates.SigmaCoordinates.from_centers(centers)
+    boundaries = sigma_levels.boundaries
+    return cls(boundaries=boundaries)
+
+  @classmethod
+  def from_xarray(
+      cls, dims: tuple[str, ...], coords: xarray.Coordinates
+  ) -> Self | cx.NoCoordinateMatch:
+    dim = dims[0]
+    if dim != 'sigma':
+      return cx.NoCoordinateMatch(f"dimension {dim!r} != 'sigma'")
+
+    if coords['sigma'].ndim != 1:
+      return cx.NoCoordinateMatch('sigma coordinate is not a 1D array')
+
+    centers = coords['sigma'].data
+    candidate = cls.from_centers(centers)
+    actual_centers = candidate.sigma_levels.centers
+    if not np.array_equal(actual_centers, centers):
+      return cx.NoCoordinateMatch(
+          'inferred sigma boundaries do not exactly match coordinate data:'
+          f' {actual_centers} vs {centers}.'
+      )
+    return candidate
+
 
 @jax.tree_util.register_static
 @dataclasses.dataclass(frozen=True)
@@ -679,7 +893,7 @@ class PressureLevels(cx.Coordinate):
   )
 
   def __init__(self, centers: Iterable[float] | np.ndarray):
-    centers = np.asarray(centers)
+    centers = np.asarray(centers, dtype=np.float32)
     object.__setattr__(self, 'centers', centers)
     self.__post_init__()
 
@@ -774,6 +988,17 @@ class PressureLevels(cx.Coordinate):
     centers = [50, 100, 150, 200, 250, 300, 400, 500, 600, 700, 850, 925, 1000]
     return cls(centers=centers)
 
+  @classmethod
+  def from_xarray(
+      cls, dims: tuple[str, ...], coords: xarray.Coordinates
+  ) -> Self | cx.NoCoordinateMatch:
+    dim = dims[0]
+    if dim != 'pressure':
+      return cx.NoCoordinateMatch(f"dimension {dim!r} != 'pressure'")
+    if coords['pressure'].ndim != 1:
+      return cx.NoCoordinateMatch('pressure coordinate is not a 1D array')
+    return cls(centers=coords['pressure'].data)
+
 
 @jax.tree_util.register_static
 @dataclasses.dataclass(frozen=True)
@@ -793,6 +1018,25 @@ class LayerLevels(cx.Coordinate):
   @property
   def fields(self):
     return {'layer_index': cx.wrap(np.arange(self.n_layers), self)}
+
+  @classmethod
+  def from_xarray(
+      cls, dims: tuple[str, ...], coords: xarray.Coordinates
+  ) -> Self | cx.NoCoordinateMatch:
+    dim = dims[0]
+    if dim != 'layer_index':
+      return cx.NoCoordinateMatch(f"dimension {dim!r} != 'layer_index'")
+
+    if coords['layer_index'].ndim != 1:
+      return cx.NoCoordinateMatch('layer_index coordinate is not a 1D array')
+
+    n_layers = coords.sizes['layer_index']
+    got = coords['layer_index'].data
+    if not np.array_equal(got, np.arange(n_layers)):
+      return cx.NoCoordinateMatch(
+          f'unexpected layer_index coordinate is not sequential integers: {got}'
+      )
+    return cls(n_layers=n_layers)
 
 
 #
@@ -889,6 +1133,21 @@ class DinosaurCoordinates(cx.CartesianProduct):
 # Helper functions.
 #
 # TODO(dkochkov) Refactor/remove helpers below to coordax.coords.
+
+
+def field_from_xarray(data_array: xarray.DataArray) -> cx.Field:
+  """Converts an xarray.DataArray to a Field using NeuralGCM coordinates."""
+  # TODO(shoyer): add DinosaurCoordinates into this list?
+  coord_types = (
+      TimeDelta,
+      LonLatGrid,
+      SphericalHarmonicGrid,
+      PressureLevels,
+      SigmaLevels,
+      LayerLevels,
+      cx.NamedAxis,
+  )
+  return cx.Field.from_xarray(data_array, coord_types)
 
 
 def consistent_coords(*inputs) -> cx.Coordinate:

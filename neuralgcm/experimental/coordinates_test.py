@@ -19,6 +19,7 @@ from absl.testing import parameterized
 import jax
 from neuralgcm.experimental import coordax as cx
 from neuralgcm.experimental import coordinates
+from neuralgcm.experimental.coordax import testing as coordax_testing
 import numpy as np
 
 
@@ -101,6 +102,12 @@ class CoordinatesTest(parameterized.TestCase):
 
     with self.subTest('shape'):
       self.assertEqual(coords.shape, expected_shape)
+
+    with self.subTest('xarray_roundtrip'):
+      field = cx.wrap(np.zeros(coords.shape), coords)
+      data_array = field.to_xarray()
+      reconstructed = coordinates.field_from_xarray(data_array)
+      coordax_testing.assert_fields_equal(reconstructed, field)
 
 
 if __name__ == '__main__':

@@ -23,7 +23,6 @@ from neuralgcm.experimental.coordax.core import (
     NamedAxis as NamedAxis,
     SelectedAxis as SelectedAxis,
     is_field as is_field,
-    is_positional_prefix_field as is_positional_prefix_field,
     cmap as cmap,
     compose_coordinates as compose_coordinates,
     wrap_like as wrap_like,

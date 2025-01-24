@@ -893,8 +893,10 @@ class DinosaurCoordinates(cx.CartesianProduct):
 
 def consistent_coords(*inputs) -> cx.Coordinate:
   """Returns the unique coordinate, or raises a ValueError."""
-  if not all([cx.is_positional_prefix_field(f) for f in inputs]):
-    raise ValueError(f'{inputs=} are not in positional prefix order.')
+  if not all(cx.is_field(f) for f in inputs):
+    raise TypeError(f'inputs are not all fields: {inputs}')
+  # TODO(dkochkov): extract dimensions from named_dims. named_shape.keys() are
+  # keys of a dict and hence don't have a guaranteed order.
   dim_names = {tuple(f.named_shape.keys()) for f in inputs}
   if len(dim_names) != 1:
     raise ValueError(f'Found non-unique {dim_names=} in inputs.')

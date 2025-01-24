@@ -349,11 +349,6 @@ def is_field(value) -> TypeGuard[Field]:
   return isinstance(value, Field)
 
 
-def is_positional_prefix_field(f: Field) -> bool:
-  """Returns True if positional axes of `f` are in prefix order."""
-  return isinstance(f.named_array, named_axes.NamedArray)
-
-
 def cmap(
     fun: Callable[..., Any], out_axes: dict[str, int] | None = None
 ) -> Callable[..., Any]:

@@ -11,13 +11,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import textwrap
 from typing import Callable, Self
 
 from absl.testing import absltest
 import jax
 from neuralgcm.experimental import coordax
 from neuralgcm.experimental.coordax import testing
-from neuralgcm.experimental.coordax import xarray as coordax_xarray
 import numpy as np
 import xarray
 
@@ -58,7 +58,7 @@ class XarrayTest(absltest.TestCase):
   def test_field_to_data_array_with_named_axis(self):
     data = np.arange(2 * 3).reshape((2, 3))
     field = coordax.wrap(data, 'x', 'y')
-    actual = coordax_xarray.field_to_data_array(field)
+    actual = field.to_xarray()
     expected = xarray.DataArray(data, dims=['x', 'y'])
     xarray.testing.assert_identical(actual, expected)
 
@@ -67,7 +67,7 @@ class XarrayTest(absltest.TestCase):
     ticks = np.array([1, 2, 3])
     axis = coordax.LabeledAxis('x', ticks)
     field = coordax.wrap(data, axis)
-    actual = coordax_xarray.field_to_data_array(field)
+    actual = field.to_xarray()
     expected = xarray.DataArray(data, dims=['x'], coords={'x': ticks})
     xarray.testing.assert_identical(actual, expected)
 
@@ -79,7 +79,7 @@ class XarrayTest(absltest.TestCase):
         fields=lambda c: {'custom': coordax.wrap(data_2d, c)},
     )
     field = coordax.wrap(10 * data_2d, custom_coord)
-    actual = coordax_xarray.field_to_data_array(field)
+    actual = field.to_xarray()
     expected = xarray.DataArray(
         data=10 * data_2d,
         dims=['x', 'y'],
@@ -92,10 +92,10 @@ class XarrayTest(absltest.TestCase):
     field = coordax.wrap(data)
     with self.assertRaisesWithLiteralMatch(
         ValueError,
-        'can only convert Field objects with fully named dimensions to Xarray'
-        ' objects, got dimensions (None, None)',
+        'can only convert Field objects with fully named dimensions to'
+        ' xarray.DataArray objects, got dimensions (None, None)',
     ):
-      coordax_xarray.field_to_data_array(field)
+      field.to_xarray()
 
   def test_field_to_data_array_inconsistent_coordinates(self):
 
@@ -113,43 +113,98 @@ class XarrayTest(absltest.TestCase):
     with self.assertRaisesRegex(
         ValueError, "inconsistent coordinate fields for 'z'"
     ):
-      coordax_xarray.field_to_data_array(field)
+      field.to_xarray()
 
-  def test_data_array_to_field_default_matchers(self):
+  def test_data_array_to_field_default_success(self):
     data = np.arange(2 * 3).reshape((2, 3))
     data_array = xarray.DataArray(
         data=data, dims=['x', 'y'], coords={'y': [1, 2, 3]}
     )
-    actual = coordax_xarray.data_array_to_field(data_array)
+    actual = coordax.Field.from_xarray(data_array)
     expected = coordax.wrap(data, 'x', coordax.LabeledAxis('y', [1, 2, 3]))
     testing.assert_fields_equal(actual, expected)
 
   def test_data_array_to_field_no_match(self):
+    # pylint: disable=line-too-long
     data = np.arange(2 * 3).reshape((2, 3))
     data_array = xarray.DataArray(
         data=data, dims=['x', 'y'], coords={'y': [1, 2, 3]}
     )
-    with self.assertRaisesWithLiteralMatch(
-        ValueError, "no match found for dimensions starting with ('x', 'y')"
-    ):
-      coordax_xarray.data_array_to_field(data_array, coord_matchers=())
 
-  def test_data_array_to_field_custom_matchers(self):
+    with self.assertRaisesWithLiteralMatch(
+        ValueError,
+        textwrap.dedent(
+            """\
+            failed to convert xarray.DataArray to coordax.Field, because no coordinate type matched the dimensions starting with ('y',):
+            <xarray.DataArray (x: 2, y: 3)> Size: 48B
+            array([[0, 1, 2],
+                   [3, 4, 5]])
+            Coordinates:
+              * y        (y) int64 24B 1 2 3
+            Dimensions without coordinates: x
+
+            Reasons why coordinate matching failed:
+            neuralgcm.experimental.coordax.NamedAxis: can only reconstruct NamedAxis objects from xarray dimensions without associated coordinate variables, but found a coordinate variable for dimension 'y'"""
+        ),
+    ):
+      coordax.Field.from_xarray(data_array, coord_types=[coordax.NamedAxis])
+
+    with self.assertRaisesWithLiteralMatch(
+        ValueError,
+        textwrap.dedent(
+            """\
+            failed to convert xarray.DataArray to coordax.Field, because no coordinate type matched the dimensions starting with ('x', 'y'):
+            <xarray.DataArray (x: 2, y: 3)> Size: 48B
+            array([[0, 1, 2],
+                   [3, 4, 5]])
+            Coordinates:
+              * y        (y) int64 24B 1 2 3
+            Dimensions without coordinates: x
+
+            Reasons why coordinate matching failed:
+            neuralgcm.experimental.coordax.LabeledAxis: no associated coordinate for dimension 'x'"""
+        ),
+    ):
+      coordax.Field.from_xarray(data_array, coord_types=[coordax.LabeledAxis])
+
+    class CustomCoordinate(coordax.Coordinate):
+
+      @classmethod
+      def from_xarray(cls, dims, coords):
+        return coordax.NoCoordinateMatch('not a match')
+
+    with self.assertRaisesWithLiteralMatch(
+        ValueError,
+        textwrap.dedent("""\
+            failed to convert xarray.DataArray to coordax.Field, because no coordinate type matched the dimensions starting with ('x', 'y'):
+            <xarray.DataArray (x: 2, y: 3)> Size: 48B
+            array([[0, 1, 2],
+                   [3, 4, 5]])
+            Coordinates:
+              * y        (y) int64 24B 1 2 3
+            Dimensions without coordinates: x
+
+            Reasons why coordinate matching failed:
+            __main__.CustomCoordinate: not a match"""),
+    ):
+      coordax.Field.from_xarray(data_array, coord_types=[CustomCoordinate])
+
+  def test_data_array_to_field_custom_coord_types(self):
     data = np.arange(2 * 3).reshape((2, 3))
     data_array = xarray.DataArray(data=data, dims=['x', 'y'])
     custom_coord = AdhocCoordinate(dims=('x', 'y'), shape=(2, 3))
-    coord_matcher = lambda dims, _: custom_coord
-    actual = coordax_xarray.data_array_to_field(data_array, [coord_matcher])
+    custom_coord.from_xarray = lambda dims, _: custom_coord
+    actual = coordax.Field.from_xarray(data_array, [custom_coord])
     expected = coordax.wrap(data, custom_coord)
     testing.assert_fields_equal(actual, expected)
 
-  def test_default_matchers_roundtrip(self):
+  def test_default_coord_types_roundtrip(self):
     data = np.arange(2 * 3).reshape((2, 3))
     data_array = xarray.DataArray(
         data=data, dims=['x', 'y'], coords={'y': [1, 2, 3]}
     )
-    field = coordax_xarray.data_array_to_field(data_array)
-    actual = coordax_xarray.field_to_data_array(field)
+    field = coordax.Field.from_xarray(data_array)
+    actual = field.to_xarray()
     xarray.testing.assert_identical(actual, data_array)
 
 

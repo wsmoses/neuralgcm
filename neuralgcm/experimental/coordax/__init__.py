@@ -21,6 +21,7 @@ from neuralgcm.experimental.coordax.core import (
     Field as Field,
     LabeledAxis as LabeledAxis,
     NamedAxis as NamedAxis,
+    NoCoordinateMatch as NoCoordinateMatch,
     SelectedAxis as SelectedAxis,
     is_field as is_field,
     cmap as cmap,

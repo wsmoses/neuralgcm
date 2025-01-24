@@ -13,6 +13,7 @@ def assert_field_properties(
     data: np.ndarray | jax.Array | None = None,
     dims: tuple[str, ...] | None = None,
     shape: tuple[int, ...] | None = None,
+    coords: Mapping[str, core.Coordinate] | None = None,
     coord_field_keys: set[str] | None = None,
     named_shape: Mapping[str, int] | None = None,
     positional_shape: tuple[int, ...] | None = None,
@@ -29,6 +30,8 @@ def assert_field_properties(
     chex.assert_equal(actual.dims, dims)
   if shape is not None:
     chex.assert_shape(actual, shape)
+  if coords is not None:
+    chex.assert_trees_all_equal(actual.coords, coords)
   if coord_field_keys is not None:
     chex.assert_trees_all_equal(
         set(actual.coord_fields.keys()), coord_field_keys
@@ -51,7 +54,7 @@ def assert_fields_allclose(
       data=desired.data,
       dims=desired.dims,
       shape=desired.shape,
-      coord_field_keys=set(desired.coord_fields.keys()),
+      coords=desired.coords,
       named_shape=desired.named_shape,
       positional_shape=desired.positional_shape,
       rtol=rtol,
@@ -66,7 +69,7 @@ def assert_fields_equal(actual: core.Field, desired: core.Field):
       data=desired.data,
       dims=desired.dims,
       shape=desired.shape,
-      coord_field_keys=set(desired.coord_fields.keys()),
+      coords=desired.coords,
       named_shape=desired.named_shape,
       positional_shape=desired.positional_shape,
       rtol=None,

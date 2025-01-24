@@ -13,8 +13,10 @@
 # limitations under the License.
 """Configure FLAGS with default values for absltest."""
 from absl import app
+import chex
 
 try:
+  chex.set_n_cpu_devices(8)
   app.run(lambda argv: None)
 except SystemExit:
   pass

@@ -1,4 +1,4 @@
-name: NeuralGCM tests
+name: Legacy tests
 
 on:
   # Triggers the workflow on push or pull request events but only for the main branch
@@ -11,7 +11,7 @@ on:
 
 jobs:
   build:
-    name: "python ${{ matrix.python-version }}"
+    name: "python ${{ matrix.python-version }} legacy"
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false

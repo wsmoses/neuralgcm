@@ -52,6 +52,12 @@ class AdhocCoordinate(coordax.Coordinate):
   def fields(self) -> dict[str, coordax.Field]:
     return {} if self._fields is None else self._fields(self)
 
+  @classmethod
+  def from_xarray(cls, dims, coords):
+    return coordax.NoCoordinateMatch('not a match')
+
+AdhocCoordinate.__module__ = 'adhoc'
+
 
 class XarrayTest(absltest.TestCase):
 
@@ -167,12 +173,6 @@ class XarrayTest(absltest.TestCase):
     ):
       coordax.Field.from_xarray(data_array, coord_types=[coordax.LabeledAxis])
 
-    class CustomCoordinate(coordax.Coordinate):
-
-      @classmethod
-      def from_xarray(cls, dims, coords):
-        return coordax.NoCoordinateMatch('not a match')
-
     with self.assertRaisesWithLiteralMatch(
         ValueError,
         textwrap.dedent("""\
@@ -185,9 +185,9 @@ class XarrayTest(absltest.TestCase):
             Dimensions without coordinates: x
 
             Reasons why coordinate matching failed:
-            __main__.CustomCoordinate: not a match"""),
+            adhoc.AdhocCoordinate: not a match"""),
     ):
-      coordax.Field.from_xarray(data_array, coord_types=[CustomCoordinate])
+      coordax.Field.from_xarray(data_array, coord_types=[AdhocCoordinate])
 
   def test_data_array_to_field_custom_coord_types(self):
     data = np.arange(2 * 3).reshape((2, 3))

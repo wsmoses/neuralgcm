@@ -4,16 +4,16 @@ from typing import Mapping
 
 import chex
 import jax
-from neuralgcm.experimental.coordax import core
+from neuralgcm.experimental import coordax
 import numpy as np
 
 
 def assert_field_properties(
-    actual: core.Field,
+    actual: coordax.Field,
     data: np.ndarray | jax.Array | None = None,
     dims: tuple[str, ...] | None = None,
     shape: tuple[int, ...] | None = None,
-    coords: Mapping[str, core.Coordinate] | None = None,
+    coords: Mapping[str, coordax.Coordinate] | None = None,
     coord_field_keys: set[str] | None = None,
     named_shape: Mapping[str, int] | None = None,
     positional_shape: tuple[int, ...] | None = None,
@@ -43,8 +43,8 @@ def assert_field_properties(
 
 
 def assert_fields_allclose(
-    actual: core.Field,
-    desired: core.Field,
+    actual: coordax.Field,
+    desired: coordax.Field,
     rtol: float = 1e-5,
     atol: float = 1e-5,
 ):
@@ -62,7 +62,7 @@ def assert_fields_allclose(
   )
 
 
-def assert_fields_equal(actual: core.Field, desired: core.Field):
+def assert_fields_equal(actual: coordax.Field, desired: coordax.Field):
   """Asserts that two Fields are equal and have matching coordinates."""
   assert_field_properties(
       actual=actual,

@@ -15,17 +15,19 @@
 # Note: import <name> as <name> is required for names to be exported.
 # See PEP 484 & https://github.com/jax-ml/jax/issues/7570
 # pylint: disable=g-multiple-import,useless-import-alias,g-importing-member
-from neuralgcm.experimental.coordax.core import (
+from neuralgcm.experimental.coordax.coordinate_systems import (
     CartesianProduct as CartesianProduct,
     Coordinate as Coordinate,
-    Field as Field,
     LabeledAxis as LabeledAxis,
     NamedAxis as NamedAxis,
     NoCoordinateMatch as NoCoordinateMatch,
     SelectedAxis as SelectedAxis,
+    compose_coordinates as compose_coordinates,
+)
+from neuralgcm.experimental.coordax.fields import (
+    Field as Field,
     is_field as is_field,
     cmap as cmap,
-    compose_coordinates as compose_coordinates,
     wrap_like as wrap_like,
     wrap as wrap,
 )

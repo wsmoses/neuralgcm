@@ -11,20 +11,15 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Defines ``Field`` and base ``Coordinate`` classes that define coordax API.
+"""Defines the Field class, which is the main data structure for Coordax.
 
-``Coordinate`` objects define a discretization schema, dimension names and
-provide methods & coordinate field values to facilitate computations.
 ``Field`` objects keep track of positional and named dimensions of an array.
 Named dimensions of a ``Field`` are associated with coordinates that describe
 their discretization.
 """
-
 from __future__ import annotations
 
-import abc
 import collections
-import dataclasses
 import functools
 import itertools
 import operator
@@ -34,7 +29,9 @@ from typing import Any, Callable, Self, TypeAlias, TypeGuard, TypeVar
 
 import jax
 import jax.numpy as jnp
+from neuralgcm.experimental.coordax import coordinate_systems
 from neuralgcm.experimental.coordax import named_axes
+from neuralgcm.experimental.coordax import utils
 import numpy as np
 # TODO(shoyer): consider making Xarray an optional dependency of core Coordax
 import xarray
@@ -44,378 +41,7 @@ Pytree: TypeAlias = Any
 Sequence = collections.abc.Sequence
 
 T = TypeVar('T')
-
-
-# TODO(shoyer): remove this once Pytype understands T -> T preserves type.
-@typing.overload
-def export(func: type[T]) -> type[T]:
-  ...
-
-
-@typing.overload
-def export(func: T) -> T:
-  ...
-
-
-def export(func):
-  func.__module__ = 'neuralgcm.experimental.coordax'
-  return func
-
-
-@export
-@dataclasses.dataclass(frozen=True)
-class NoCoordinateMatch:
-  """For use when a coordinate does not match an xarray.Coordinates object."""
-
-  reason: str
-
-
-@export
-class Coordinate(abc.ABC):
-  """Abstract class for coordinate objects.
-
-  Coordinate subclasses are expected to obey several invariants:
-  1. Dimension names may not be repeated: `len(set(dims)) == len(dims)`
-  2. All dimensions must be named: `len(shape) == len(dims)`
-
-  Every non-abstract Coordinate subclass must be registered as a "static"
-  pytree node, e.g., by decorating the class with
-  `@jax.tree_util.register_static`. Static pytrees nodes must implement
-  `__hash__` and `__eq__` according to the requirements of keys in Python
-  dictionaries. This is easiest to acheive with frozen dataclasses, but care
-  must be taken when working with np.ndarray attributes.
-
-  TODO(shoyer): add documentation examples, including a version using ArrayKey
-  to wrap np.ndarray attributions.
-  """
-
-  @property
-  @abc.abstractmethod
-  def dims(self) -> tuple[str, ...]:
-    """Dimension names of the coordinate."""
-    raise NotImplementedError()
-
-  @property
-  @abc.abstractmethod
-  def shape(self) -> tuple[int, ...]:
-    """Shape of the coordinate."""
-    raise NotImplementedError()
-
-  @property
-  @abc.abstractmethod
-  def fields(self) -> dict[str, Field]:
-    """A maps from field names to their values."""
-
-  @property
-  def sizes(self) -> dict[str, int]:
-    """Sizes of all dimensions on this coordinate."""
-    return dict(zip(self.dims, self.shape))
-
-  @property
-  def ndim(self) -> int:
-    """Dimensionality of the coordinate."""
-    return len(self.dims)
-
-  @property
-  def axes(self) -> tuple[Coordinate, ...]:
-    """Tuple of one-dimensional Coordinate objects for each dimension."""
-    if self.ndim == 1:
-      return (self,)
-    else:
-      return tuple(SelectedAxis(self, i) for i in range(self.ndim))
-
-  def to_xarray(self) -> dict[str, xarray.Variable]:
-    """Convert this coordinate into xarray variables."""
-    variables = {}
-    dims_set = set(self.dims)
-    for name, coord_field in self.fields.items():
-      if set(coord_field.dims) <= dims_set:
-        # xarray.DataArray coordinate dimensions must be a subset of the
-        # dimensions of the associated DataArray, which is not necessarily a
-        # constraint for coordax.Field.
-        variables[name] = xarray.Variable(coord_field.dims, coord_field.data)
-    return variables
-
-  @classmethod
-  def from_xarray(
-      cls, dims: tuple[str, ...], coords: xarray.Coordinates
-  ) -> Self | NoCoordinateMatch:
-    """Construct a matching Coordax coordinate from xarray, if possible.
-
-    Args:
-      dims: tuple of dimension names. Only the leading dimensions should be
-        checks for a match.
-      coords: xarray.Coordinates object providing dimension sizes and coordinate
-        values.
-
-    Returns:
-      A matching instance of this coordinate, or `NoCoordinateMatch` if the
-      coordinate does not match the xarray dimensions and coordinates.
-    """
-    raise NotImplementedError('from_xarray not implemented')
-
-
-@dataclasses.dataclass(frozen=True)
-class ArrayKey:
-  """Wrapper for a numpy array to make it hashable."""
-
-  value: np.ndarray
-
-  def __eq__(self, other):
-    return (
-        isinstance(self, ArrayKey)
-        and self.value.dtype == other.value.dtype
-        and self.value.shape == other.value.shape
-        and (self.value == other.value).all()
-    )
-
-  def __hash__(self) -> int:
-    return hash((self.value.shape, self.value.tobytes()))
-
-
-@export
-@jax.tree_util.register_static
-@dataclasses.dataclass(frozen=True)
-class SelectedAxis(Coordinate):
-  """Coordinate that exposes one dimension of a multidimensional coordinate."""
-
-  coordinate: Coordinate
-  axis: int
-
-  def __post_init__(self):
-    if self.axis >= self.coordinate.ndim:
-      raise ValueError(
-          f'Dimension {self.axis=} of {self.coordinate=} is out of bounds'
-      )
-
-  @property
-  def dims(self) -> tuple[str, ...]:
-    """Dimension names of the coordinate."""
-    return (self.coordinate.dims[self.axis],)
-
-  @property
-  def shape(self) -> tuple[int, ...]:
-    """Shape of the coordinate."""
-    return (self.coordinate.shape[self.axis],)
-
-  @property
-  def fields(self) -> dict[str, Field]:
-    """A maps from field names to their values."""
-    return self.coordinate.fields
-
-  def __repr__(self):
-    return f'coordax.SelectedAxis({self.coordinate!r}, axis={self.axis})'
-
-  def to_xarray(self) -> dict[str, xarray.Variable]:
-    """Convert this coordinate into xarray variables."""
-    # Override the default method to avoid restricting variables to only those
-    # along the selected axis.
-    return self.coordinate.to_xarray()
-
-
-def consolidate_coordinates(*coordinates: Coordinate) -> tuple[Coordinate, ...]:
-  """Consolidates coordinates without SelectedAxis objects, if possible."""
-  axes = []
-  result = []
-
-  def reset_axes():
-    result.extend(axes)
-    axes[:] = []
-
-  def append_axis(c):
-    axes.append(c)
-    if len(axes) == c.coordinate.ndim:
-      # sucessful consolidation
-      result.append(c.coordinate)
-      axes[:] = []
-
-  for c in coordinates:
-    if isinstance(c, SelectedAxis) and c.axis == 0:
-      # new SelectedAxis to consider consolidating
-      reset_axes()
-      append_axis(c)
-    elif (
-        isinstance(c, SelectedAxis)
-        and axes
-        and c.axis == len(axes)
-        and c.coordinate == axes[-1].coordinate
-    ):
-      # continued SelectedAxis to consolidate
-      append_axis(c)
-    else:
-      # coordinate cannot be consolidated
-      reset_axes()
-      result.append(c)
-
-  reset_axes()
-
-  return tuple(result)
-
-
-@export
-@jax.tree_util.register_static
-@dataclasses.dataclass(frozen=True)
-class CartesianProduct(Coordinate):
-  """Coordinate defined as the outer product of independent coordinates."""
-
-  coordinates: tuple[Coordinate, ...]
-
-  def __post_init__(self):
-    new_coordinates = []
-    for c in self.coordinates:
-      new_coordinates.extend(c.axes)
-    combined_coordinates = consolidate_coordinates(*new_coordinates)
-    if len(combined_coordinates) <= 1:
-      raise ValueError('CartesianProduct must contain more than 1 component')
-    existing_dims = collections.Counter()
-    for c in new_coordinates:
-      existing_dims.update(c.dims)
-    repeated_dims = [dim for dim, count in existing_dims.items() if count > 1]
-    if repeated_dims:
-      raise ValueError(f'CartesianProduct components contain {repeated_dims=}')
-    object.__setattr__(self, 'coordinates', tuple(new_coordinates))
-
-  def __eq__(self, other):
-    # TODO(shoyer): require exact equality of coordinate types?
-    if not isinstance(other, CartesianProduct):
-      return len(self.coordinates) == 1 and self.coordinates[0] == other
-    return isinstance(other, CartesianProduct) and all(
-        self.coordinates[i] == other.coordinates[i]
-        for i in range(len(self.coordinates))
-    )
-
-  @property
-  def dims(self):
-    return sum([c.dims for c in self.coordinates], start=tuple())
-
-  @property
-  def shape(self) -> tuple[int, ...]:
-    """Returns the shape of the coordinate axes."""
-    return sum([c.shape for c in self.coordinates], start=tuple())
-
-  @property
-  def fields(self) -> dict[str, Field]:
-    """Returns a mapping from field names to their values."""
-    return functools.reduce(
-        operator.or_, [c.fields for c in self.coordinates], {}
-    )
-
-  @property
-  def axes(self) -> tuple[Coordinate, ...]:
-    """Returns a tuple of Axis objects for each dimension."""
-    return self.coordinates
-
-
-@export
-@jax.tree_util.register_static
-@dataclasses.dataclass(frozen=True)
-class NamedAxis(Coordinate):
-  """One dimensional coordinate that only dimension size."""
-
-  name: str
-  size: int
-
-  @property
-  def dims(self) -> tuple[str, ...]:
-    return (self.name,)
-
-  @property
-  def shape(self) -> tuple[int, ...]:
-    return (self.size,)
-
-  @property
-  def fields(self) -> dict[str, Field]:
-    return {}
-
-  def __repr__(self):
-    return f'coordax.NamedAxis({self.name!r}, size={self.size})'
-
-  @classmethod
-  def from_xarray(
-      cls, dims: tuple[str, ...], coords: xarray.Coordinates
-  ) -> Self | NoCoordinateMatch:
-    dim = dims[0]
-    if dim in coords:
-      return NoCoordinateMatch(
-          'can only reconstruct NamedAxis objects from xarray dimensions'
-          ' without associated coordinate variables, but found a coordinate'
-          f' variable for dimension {dim!r}'
-      )
-    return cls(dim, size=coords.sizes[dim])
-
-
-# TODO(dkochkov): consider storing tuple values instead of np.ndarray (which
-# could be exposed as a property).
-@export
-@jax.tree_util.register_static
-@dataclasses.dataclass(frozen=True)
-class LabeledAxis(Coordinate):
-  """One dimensional coordinate with custom coordinate values."""
-
-  name: str
-  ticks: np.ndarray
-
-  def __post_init__(self):
-    object.__setattr__(self, 'ticks', np.asarray(self.ticks))
-    if self.ticks.ndim != 1:
-      raise ValueError(f'ticks must be a 1D array, got {self.ticks.shape=}')
-
-  @property
-  def dims(self) -> tuple[str, ...]:
-    return (self.name,)
-
-  @property
-  def shape(self) -> tuple[int, ...]:
-    return self.ticks.shape
-
-  @property
-  def fields(self) -> dict[str, Field]:
-    return {self.name: wrap(self.ticks, self)}
-
-  def _components(self):
-    return (self.name, ArrayKey(self.ticks))
-
-  def __eq__(self, other):
-    return (
-        isinstance(other, LabeledAxis)
-        and self._components() == other._components()
-    )
-
-  def __hash__(self) -> int:
-    return hash(self._components())
-
-  def __repr__(self):
-    return f'coordax.LabeledAxis({self.name!r}, ticks={self.ticks!r})'
-
-  @classmethod
-  def from_xarray(
-      cls, dims: tuple[str, ...], coords: xarray.Coordinates
-  ) -> Self | NoCoordinateMatch:
-    dim = dims[0]
-    if dim not in coords:
-      return NoCoordinateMatch(
-          f'no associated coordinate for dimension {dim!r}'
-      )
-    if coords[dim].ndim != 1:
-      return NoCoordinateMatch(f'coordinate for dimension {dim!r} is not 1D')
-    return cls(dim, coords[dim].data)
-
-
-@export
-def compose_coordinates(*coordinates: Coordinate) -> Coordinate:
-  """Composes `coords` into a single coordinate system by cartesian product."""
-  if not coordinates:
-    raise ValueError('No coordinates provided.')
-  coordinate_axes = []
-  for c in coordinates:
-    if isinstance(c, CartesianProduct):
-      coordinate_axes.extend(c.coordinates)
-    else:
-      coordinate_axes.append(c)
-  coordinates = consolidate_coordinates(*coordinate_axes)
-  if len(coordinates) == 1:
-    return coordinates[0]
-  return CartesianProduct(coordinates)
+Coordinate = coordinate_systems.Coordinate
 
 
 def _dimension_names(*names: str | Coordinate) -> tuple[str, ...]:
@@ -432,12 +58,12 @@ def _validate_matching_coords(
   coordinates = []
   for axis in axis_order:
     if isinstance(axis, Coordinate):
-      if isinstance(axis, CartesianProduct):
+      if isinstance(axis, coordinate_systems.CartesianProduct):
         for c in axis.coordinates:
           coordinates.append(c)
       elif axis.ndim > 1:
         for i in range(axis.ndim):
-          coordinates.append(SelectedAxis(axis, i))
+          coordinates.append(coordinate_systems.SelectedAxis(axis, i))
       else:
         coordinates.append(axis)
   for c in coordinates:
@@ -448,13 +74,13 @@ def _validate_matching_coords(
         raise ValueError(f'Coordinate {c} does not match {coords[dim]=}')
 
 
-@export
+@utils.export
 def is_field(value) -> TypeGuard[Field]:
   """Returns True if `value` is of type `Field`."""
   return isinstance(value, Field)
 
 
-@export
+@utils.export
 def cmap(
     fun: Callable[..., Any], out_axes: dict[str, int] | None = None
 ) -> Callable[..., Any]:
@@ -572,7 +198,7 @@ def _wrap_array_method(name):
   return wrapped_func
 
 
-@export
+@utils.export
 @jax.tree_util.register_pytree_node_class
 class Field:
   """An array with optional named dimensions and associated coordinates."""
@@ -604,7 +230,7 @@ class Field:
 
     for dim, size in named_array.named_shape.items():
       if dim not in coords:
-        coords[dim] = NamedAxis(dim, size=size)
+        coords[dim] = coordinate_systems.NamedAxis(dim, size=size)
 
     self._named_array = named_array
     self._coords = coords
@@ -647,7 +273,6 @@ class Field:
             f'named array vs coordinate:\n{self.named_array}\n{coord}'
         )
 
-
   @classmethod
   def from_namedarray(
       cls,
@@ -661,7 +286,10 @@ class Field:
   def from_xarray(
       cls,
       data_array: xarray.DataArray,
-      coord_types: Sequence[type[Coordinate]] = (LabeledAxis, NamedAxis),
+      coord_types: Sequence[type[Coordinate]] = (
+          coordinate_systems.LabeledAxis,
+          coordinate_systems.NamedAxis,
+      ),
   ) -> Self:
     """Converts an xarray.DataArray into a coordax.Field.
 
@@ -695,7 +323,7 @@ class Field:
         result = coord_type.from_xarray(dims, data_array.coords)
         if isinstance(result, Coordinate):
           return result
-        assert isinstance(result, NoCoordinateMatch)
+        assert isinstance(result, coordinate_systems.NoCoordinateMatch)
         coord_name = coord_type.__module__ + '.' + coord_type.__name__
         reasons.append(f'{coord_name}: {result.reason}')
 
@@ -957,7 +585,7 @@ class Field:
   # mT = _wrap_array_method('mT')  # pylint: disable=invalid-name
 
 
-@export
+@utils.export
 def wrap(array: jax.typing.ArrayLike, *names: str | Coordinate | None) -> Field:
   """Wraps a positional array as a ``Field``."""
   field = Field(array)
@@ -966,7 +594,7 @@ def wrap(array: jax.typing.ArrayLike, *names: str | Coordinate | None) -> Field:
   return field
 
 
-@export
+@utils.export
 def wrap_like(array: jax.typing.ArrayLike, other: Field) -> Field:
   """Wraps `array` with the same coordinates as `other`."""
   array = jnp.asarray(array)

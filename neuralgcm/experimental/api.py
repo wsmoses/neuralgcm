@@ -32,6 +32,7 @@ from neuralgcm.experimental import module_utils
 from neuralgcm.experimental import random_processes
 from neuralgcm.experimental import time_integrators
 from neuralgcm.experimental import typing
+import neuralgcm.experimental.jax_datetime as jdt
 import numpy as np
 import orbax.checkpoint as ocp
 import pandas as pd
@@ -151,7 +152,9 @@ class ForecastSystem(nnx.Module, abc.ABC):
       random_process.unconditional_sample(key)
 
   def format_diagnostics(
-      self, state: typing.ModelState | None = None, time: float | None = None
+      self,
+      state: typing.ModelState | None = None,
+      time: jdt.Datetime | None = None,
   ) -> typing.Pytree:
     if state is not None:
       nnx.update(self, state.diagnostics)

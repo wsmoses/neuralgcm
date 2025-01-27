@@ -37,6 +37,7 @@ from neuralgcm.experimental import standard_layers
 from neuralgcm.experimental import towers
 from neuralgcm.experimental import typing
 from neuralgcm.experimental import units
+import neuralgcm.experimental.jax_datetime as jdt
 import numpy as np
 import xarray
 
@@ -216,7 +217,7 @@ class StandardPytreeTransformsTest(parameterized.TestCase):
           for k, rng, mean, std in zip(keys, rngs, input_means, input_stds)
       }
 
-    xs = get_inputs(jax.random.PRNGKey(1))
+    xs = get_inputs(jax.random.key(1))
 
     def _check_mean_and_std(xs, expected_means, expected_stds):
       mean_over_batch = functools.partial(np.mean, axis=0)
@@ -225,7 +226,7 @@ class StandardPytreeTransformsTest(parameterized.TestCase):
       xs_std = jax.tree.map(std_over_batch, xs)
       for i, k in enumerate(keys):
         mean_atol = 6 * (expected_stds[i] / np.sqrt(batch_size))
-        std_atol = 6 * (np.sqrt(2 / (batch_size - 1)) * expected_stds[i]**2)
+        std_atol = 6 * (np.sqrt(2 / (batch_size - 1)) * expected_stds[i] ** 2)
         expected_mean = np.array([expected_means[i]] * feature_size)
         expected_std = np.array([expected_stds[i]] * feature_size)
         np.testing.assert_allclose(xs_mean[k], expected_mean, atol=mean_atol)
@@ -267,14 +268,11 @@ class InputsFeaturesTest(parameterized.TestCase):
       feature_module: pytree_transforms.Transform,
       inputs: typing.Pytree,
   ):
-    with self.subTest('call method'):
-      features = feature_module(inputs)
-
-    with self.subTest('output_shape_matches_actual'):
-      input_shapes = pytree_utils.shape_structure(inputs)
-      actual = feature_module.output_shapes(input_shapes)
-      expected = pytree_utils.shape_structure(features)
-      chex.assert_trees_all_equal(actual, expected)
+    features = feature_module(inputs)
+    expected = pytree_utils.shape_structure(features)
+    input_shapes = pytree_utils.shape_structure(inputs)
+    actual = feature_module.output_shapes(input_shapes)
+    chex.assert_trees_all_equal(actual, expected)
 
   @parameterized.named_parameters(
       dict(
@@ -286,13 +284,10 @@ class InputsFeaturesTest(parameterized.TestCase):
       ),
   )
   def test_radiation_features(self, coords):
-    radiation_features = pytree_transforms.RadiationFeatures(
-        coords=coords,
-        sim_units=units.DEFAULT_UNITS,
-    )
+    radiation_features = pytree_transforms.RadiationFeatures(coords=coords)
     self._test_feature_module(
         radiation_features,
-        {'sim_time': np.array(314.159)},
+        {'time': jdt.to_datetime('2025-01-09T15:00')},
     )
 
   def test_latitude_features(self):
@@ -332,9 +327,11 @@ class InputsFeaturesTest(parameterized.TestCase):
     }
     timedelta = coordinates.TimeDelta.as_index(2)
     grid_trajectory = cx.compose_coordinates(timedelta, grid)
-    sim_time = np.arange(timedelta.shape[0])
+    time = jdt.to_datetime('2000-01-01') + jdt.to_timedelta(
+        12, 'h'
+    ) * np.arange(timedelta.shape[0])
     in_data = {
-        k: data_specs.TimedField(cx.wrap(v, grid_trajectory), sim_time)
+        k: data_specs.TimedField(cx.wrap(v, grid_trajectory), time)
         for k, v in data.items()
     }
     dynamic_input.update_dynamic_inputs(in_data)
@@ -342,7 +339,10 @@ class InputsFeaturesTest(parameterized.TestCase):
       dynamic_input_features = pytree_transforms.DynamicInputFeatures(
           ('a', 'b'), dynamic_input
       )
-      self._test_feature_module(dynamic_input_features, {'sim_time': 0.1})
+      self._test_feature_module(
+          dynamic_input_features,
+          {'time': jdt.to_datetime('2000-01-01T06')},
+      )
 
   def test_spatial_surface_features(self):
     feature_sizes = {
@@ -376,7 +376,7 @@ class InputsFeaturesTest(parameterized.TestCase):
         'v': np.ones(coords.dinosaur_coords.modal_shape),
         'lsp': np.ones(coords.dinosaur_coords.modal_shape[1:])[np.newaxis, ...],
         'tracers': {},
-        'sim_time': 0.0,
+        'time': jdt.to_datetime('2025-01-09T15:00'),
     }
     self._test_feature_module(features_grads, inputs)
 
@@ -461,7 +461,7 @@ class InputsFeaturesTest(parameterized.TestCase):
           variance=1.0,
           rngs=nnx.Rngs(0),
       )
-      random_process.unconditional_sample(jax.random.PRNGKey(0))
+      random_process.unconditional_sample(jax.random.key(0))
       randomness_features = pytree_transforms.RandomnessFeatures(
           random_process=random_process,
           grid=grid,
@@ -478,7 +478,7 @@ class InputsFeaturesTest(parameterized.TestCase):
           variances=[1.0, 1.0],
           rngs=nnx.Rngs(0),
       )
-      random_process.unconditional_sample(jax.random.PRNGKey(0))
+      random_process.unconditional_sample(jax.random.key(0))
       randomness_features = pytree_transforms.RandomnessFeatures(
           random_process=random_process,
           grid=grid,
@@ -497,7 +497,7 @@ class InputsFeaturesTest(parameterized.TestCase):
         'a': np.ones((1,) + coords.horizontal.shape),
         'b': np.ones((1,) + coords.horizontal.shape),
         'c': np.ones(coords.shape),
-        'sim_time': 0.0,
+        'time': jdt.to_datetime('2025-01-09T15:00'),
     }
     self._test_feature_module(prognostic_features, inputs)
 
@@ -558,4 +558,5 @@ class PrecipitationminusEvaporationTest(parameterized.TestCase):
       np.testing.assert_allclose(outputs, expected_outputs, rtol=1e-5)
 
 if __name__ == '__main__':
+  jax.config.update('jax_traceback_filtering', 'off')
   absltest.main()

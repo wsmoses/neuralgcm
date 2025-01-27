@@ -18,18 +18,19 @@ from typing import Hashable
 
 from dinosaur import spherical_harmonic
 from dinosaur import xarray_utils as dino_xarray_utils
-import jax.numpy as jnp
 from neuralgcm.experimental import coordax as cx
 from neuralgcm.experimental import coordinates
 from neuralgcm.experimental import data_specs
 from neuralgcm.experimental import scales
 from neuralgcm.experimental import typing
 from neuralgcm.experimental import units
-import numpy as np
+import neuralgcm.experimental.jax_datetime as jdt
 import xarray
 
 
 AxisName = Hashable
+XR_TIME_NAME = 'time'
+XR_TIME_IN_MINUTES_SINCE_EPOCH_NAME = 'minutes_since_epoch'
 XR_SHORT_LON_NAME = 'lon'
 XR_SHORT_LAT_NAME = 'lat'
 XR_LON_NAME = 'longitude'
@@ -132,56 +133,6 @@ def xarray_to_data_dict(ds: xarray.Dataset, *, values: str = 'values'):
   return _xarray_to_data_dict(ds, values=values)
 
 
-# TODO(dkochkov): Transition to using typing.Timedelta instead of sim_time.
-
-
-def datetime64_to_nondim_time(
-    time: np.ndarray,
-    sim_units: units.SimUnits,
-) -> np.ndarray:
-  """Converts `time` in datetime64 format to nondimensional sim_time."""
-  return np.asarray(
-      sim_units.nondimensionalize(
-          ((time - sim_units.reference_datetime) / np.timedelta64(1, 'h'))
-          * typing.units.hour
-      )
-  )
-
-
-def nondim_time_delta_from_time_axis(
-    time: typing.Array,
-    sim_units: units.SimUnits,
-) -> typing.Numeric:
-  """Infers time delta along `time` axis in nondimensional units."""
-  time_delta = time[1] - time[0]
-  if not np.issubdtype(time.dtype, np.floating):
-    time_delta = np.timedelta64(time_delta, 's') / np.timedelta64(1, 's')
-    result = sim_units.nondimensionalize(time_delta * typing.units.second)
-    assert isinstance(result, typing.Numeric)
-    return result
-  return float(time_delta)
-
-
-def with_sim_time(ds: xarray.Dataset, sim_units: units.SimUnits):
-  """Returns `ds` with nondimensional time added as `sim_time` if absent."""
-  if 'sim_time' in ds:
-    return ds
-  if np.issubdtype(ds.time.dtype, np.floating):
-    nondim_time = ds.time.data
-  else:
-    nondim_time = datetime64_to_nondim_time(ds.time.data, sim_units)
-  # if dataset contains `sample` axis, sim_time should have it as well.
-  if dino_xarray_utils.XR_SAMPLE_NAME in ds.coords:
-    nondim_time = nondim_time[np.newaxis, ...]
-    nondim_time = np.repeat(
-        nondim_time, ds.sizes[dino_xarray_utils.XR_SAMPLE_NAME], 0
-    )
-    sim_time = ((dino_xarray_utils.XR_SAMPLE_NAME,) + ds.time.dims, nondim_time)
-  else:
-    sim_time = (ds.time.dims, nondim_time)
-  return ds.assign(sim_time=sim_time)
-
-
 def xarray_to_timed_fields_dict(
     ds: xarray.Dataset,
     *,
@@ -192,11 +143,10 @@ def xarray_to_timed_fields_dict(
   if coords is None:
     coords = coordinates_from_dataset(ds)
   data_dict = xarray_to_data_dict(ds, values=values)
-  if 'sim_time' not in data_dict:
-    raise ValueError(f'Dataset {ds.coords.keys()} does not contain sim_time.')
-  sim_time = data_dict.pop('sim_time')
+  data_dict.pop(XR_TIME_NAME, None)
+  time = jdt.to_datetime(ds[XR_TIME_NAME].data)
   observations = {
-      k: data_specs.TimedField(_wrap_suffix(v, coords), sim_time)
+      k: data_specs.TimedField(_wrap_suffix(v, coords), time)
       for k, v in data_dict.items()
   }
   return observations
@@ -212,26 +162,26 @@ def xarray_to_timed_fieldset(
   if coords is None:
     coords = coordinates_from_dataset(ds)  # use default unnamed dims for now.
   data_dict = xarray_to_data_dict(ds, values=values)
-  if 'sim_time' not in data_dict:
-    raise ValueError(f'Dataset {ds.coords.keys()} does not contain sim_time.')
-  sim_time = data_dict.pop('sim_time')
+  data_dict.pop(XR_TIME_NAME, None)
+  time = jdt.to_datetime(ds[XR_TIME_NAME].data)
   return data_specs.TimedObservations(
       fields={k: _wrap_suffix(v, coords) for k, v in data_dict.items()},
-      timestamp=sim_time,
+      timestamp=time,
   )
 
 
 def timed_field_to_xarray(
     fields_dict: dict[str, data_specs.TimedField[cx.Field]],
     *,
-    sim_units: units.SimUnits | None = None,
     additional_coords: dict[str, typing.Array] | None = None,
     serialize_coords_to_attrs: bool = False,
 ):
   """Converts `fields_dict` to an xarray dataset."""
   data_dict = {k: v.field.data for k, v in fields_dict.items()}
   sample_obs = next(iter(fields_dict.values()))
-  sim_time = np.asarray(sample_obs.timestamp)
+  if sample_obs.timestamp is None:
+    raise ValueError(f'observations do not have timestamps: {sample_obs}')
+  time = sample_obs.timestamp.to_datetime64()
   level_options = set(['sigma', 'pressure', 'level', 'layer_index'])
   data_dims = sample_obs.field.dims
   level_name = level_options.intersection(set(data_dims))
@@ -252,20 +202,13 @@ def timed_field_to_xarray(
   horizontal = cx.compose_coordinates(
       *[sample_obs.field.coords[k] for k in horizontal_names]
   )
-  if (
-      sim_units is not None
-      and sim_time is not None
-      and jnp.isdtype(sim_time.dtype, kind='real floating')
-  ):
-    sim_time = sim_units.sim_time_to_datetime64(sim_time)
-
   dino_coords = coordinates.DinosaurCoordinates(
       horizontal=horizontal, vertical=vertical
   )
   return dino_xarray_utils.data_to_xarray(
       data={k: v for k, v in data_dict.items()},
       coords=dino_coords.dinosaur_coords,
-      times=sim_time,
+      times=time,
       sample_ids=None,
       additional_coords=additional_coords,
       serialize_coords_to_attrs=serialize_coords_to_attrs,

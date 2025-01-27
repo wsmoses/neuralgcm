@@ -26,6 +26,7 @@ import abc
 import collections
 import dataclasses
 import functools
+import itertools
 import operator
 import textwrap
 import typing
@@ -596,20 +597,56 @@ class Field:
       coords: optional mapping from dimension names to associated
         `coordax.Coordinate` objects.
     """
-    self._named_array = named_axes.NamedArray(data, dims)
-    self._coords = coords or {}
+    named_array = named_axes.NamedArray(data, dims)
+
+    if coords is None:
+      coords = {}
+
+    for dim, size in named_array.named_shape.items():
+      if dim not in coords:
+        coords[dim] = NamedAxis(dim, size=size)
+
+    self._named_array = named_array
+    self._coords = coords
     self._check_valid()
 
   def _check_valid(self) -> None:
     """Checks that the field coordinates and dimension names are consistent."""
-    data_dims = set(self.named_array.named_shape.keys())
+
+    # internal consistency of coordinates
+    for dim, coord in self.coords.items():
+      if coord.ndim > 1:
+        raise ValueError(
+            f'all coordinates in the coords dict must be 1D, got {coord} for '
+            f'dimension {dim}. Consider using Field.tag() instead to associate '
+            'multi-dimensional coordinates.'
+        )
+      if (dim,) != coord.dims:
+        raise ValueError(
+            f'coordinate under key {dim!r} in the coords dict must have '
+            f'dims={(dim,)!r} but got {coord.dims=}'
+        )
+
+    # consistency of coordinates and named array
+    data_dims = set(self.named_array.named_dims)
     keys_dims = set(self.coords.keys())
-    coord_dims = set(sum([c.dims for c in self.coords.values()], start=()))
-    if (data_dims != keys_dims) or (data_dims != coord_dims):
+    coord_dims = set(
+        itertools.chain.from_iterable(c.dims for c in self.coords.values())
+    )
+    if not (data_dims == keys_dims == coord_dims):
       raise ValueError(
-          'Field dimension names must be the same across keys and coordinates'
-          f' , got {data_dims=}, {keys_dims=} and {keys_dims=}.'
+          'Field dimension names must be the same across data, keys and '
+          f'coordinates, got {data_dims=}, {keys_dims=} and {coord_dims=}.'
       )
+
+    for dim, coord in self.coords.items():
+      if self.named_shape[dim] != coord.sizes[dim]:
+        raise ValueError(
+            f'inconsistent size for dimension {dim!r} between data and '
+            f'coordinates: {self.named_shape[dim]} vs {coord.sizes[dim]} on '
+            f'named array vs coordinate:\n{self.named_array}\n{coord}'
+        )
+
 
   @classmethod
   def from_namedarray(
@@ -806,15 +843,8 @@ class Field:
     coords.update(self.coords)
     for c in names:
       if isinstance(c, Coordinate):
-        if isinstance(c, CartesianProduct):
-          for sub_c in c.coordinates:
-            [dim] = sub_c.dims  # all sub-coordinates are 1d
-            coords[dim] = sub_c
-        else:
-          for i, dim in enumerate(c.dims):
-            coords[dim] = c if c.ndim == 1 else SelectedAxis(c, i)
-      elif isinstance(c, str):
-        coords[c] = NamedAxis(c, size=tagged_array.named_shape[c])
+        for dim, axis in zip(c.dims, c.axes):
+          coords[dim] = axis
     result = Field.from_namedarray(tagged_array, coords)
     return result
 
@@ -834,8 +864,8 @@ class Field:
       coords_repr = (
           '{\n'
           + '\n'.join(
-              textwrap.indent(f'{k!r}: {v},', prefix=' ' * 12)
-              for k, v in self.coords.items()
+              textwrap.indent(f'{dim!r}: {self.coords[dim]},', prefix=' ' * 12)
+              for dim in self.named_dims
           )
           + '\n        }'
       )

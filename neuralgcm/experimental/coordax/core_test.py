@@ -14,7 +14,6 @@
 import functools
 import operator
 import textwrap
-from typing import Any, Callable
 
 from absl.testing import absltest
 from absl.testing import parameterized
@@ -247,6 +246,62 @@ class CoreTest(parameterized.TestCase):
         positional_shape=expected_positional_shape,
         coord_field_keys=expected_coord_field_keys,
     )
+
+  def test_field_constructor_default_coords(self):
+    field = coordax.Field(np.zeros((2, 3, 4)), dims=('x', None, 'z'))
+    expected_coords = {
+        'x': coordax.NamedAxis('x', 2),
+        'z': coordax.NamedAxis('z', 4),
+    }
+    self.assertEqual(field.coords, expected_coords)
+
+  def test_field_constructor_invalid(self):
+    with self.assertRaisesWithLiteralMatch(
+        ValueError,
+        'all coordinates in the coords dict must be 1D, got'
+        " CartesianProduct(coordinates=(coordax.NamedAxis('x', size=2),"
+        " coordax.NamedAxis('y', size=3))) for dimension x. Consider using"
+        ' Field.tag() instead to associate multi-dimensional coordinates.',
+    ):
+      coordax.Field(np.zeros(3), coords={'x': self.PRODUCT_XY})
+
+    with self.assertRaisesWithLiteralMatch(
+        ValueError,
+        "coordinate under key 'x' in the coords dict must have dims=('x',) but"
+        " got coord.dims=('y',)",
+    ):
+      coordax.Field(
+          np.zeros((2, 3)),
+          dims=('x', 'y'),
+          coords={
+              'x': coordax.NamedAxis('y', 2),
+              'y': coordax.NamedAxis('x', 3),
+          },
+      )
+
+    with self.assertRaisesRegex(
+        ValueError,
+        r'Field dimension names must be the same across data, keys and'
+        r" coordinates\, got data_dims\=\{'x'\}\, keys_dims\=\{.+\} and"
+        r' coord_dims\=\{.+\}',
+    ):
+      coordax.Field(
+          np.zeros(3), dims=('x',), coords={'y': coordax.NamedAxis('y', 3)}
+      )
+
+    with self.assertRaisesWithLiteralMatch(
+        ValueError,
+        textwrap.dedent("""\
+            inconsistent size for dimension 'x' between data and coordinates: 3 vs 4 on named array vs coordinate:
+            NamedArray(
+                data=Array([0., 0., 0.], dtype=float32),
+                dims=('x',),
+            )
+            coordax.NamedAxis('x', size=4)"""),
+    ):
+      coordax.Field(
+          np.zeros(3), dims=('x',), coords={'x': coordax.NamedAxis('x', 4)}
+      )
 
   def test_field_binary_op_sum_simple(self):
     field_a = coordax.wrap(np.arange(2 * 3 * 4).reshape((2, 4, 3)))

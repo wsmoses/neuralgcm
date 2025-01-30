@@ -27,7 +27,7 @@ import functools
 import operator
 import textwrap
 import types
-from typing import Any, Callable, Self, TypeVar
+from typing import Any, Callable, Self, TypeGuard, TypeVar
 
 import jax
 import jax.numpy as jnp
@@ -724,7 +724,7 @@ class NamedArray:
 PyTree = Any
 
 
-def is_namedarray(array: Any) -> bool:
+def is_namedarray(array: Any) -> TypeGuard[NamedArray]:
   return isinstance(array, NamedArray)
 
 

@@ -411,6 +411,17 @@ class FieldTest(parameterized.TestCase):
           shape=(length, batch) + x_coord.shape,
       )
 
+  def test_tag_and_untag_function(self):
+    data = np.arange(2 * 3).reshape((2, 3))
+    inputs = {'a': coordax.Field(data), 'b': 42}
+
+    expected = {'a': coordax.wrap(data, 'x', 'y'), 'b': 42}
+    tagged = coordax.tag(inputs, 'x', 'y')
+    jax.tree.map(np.testing.assert_array_equal, tagged, expected)
+
+    untagged = coordax.untag(tagged, 'x', 'y')
+    jax.tree.map(np.testing.assert_array_equal, untagged, inputs)
+
 
 if __name__ == '__main__':
   absltest.main()

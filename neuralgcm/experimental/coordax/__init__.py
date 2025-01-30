@@ -30,4 +30,6 @@ from neuralgcm.experimental.coordax.fields import (
     cmap as cmap,
     wrap_like as wrap_like,
     wrap as wrap,
+    tag as tag,
+    untag as untag,
 )

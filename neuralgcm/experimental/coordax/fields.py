@@ -58,26 +58,14 @@ def _validate_matching_coords(
   coordinates = []
   for axis in axis_order:
     if isinstance(axis, Coordinate):
-      if isinstance(axis, coordinate_systems.CartesianProduct):
-        for c in axis.coordinates:
-          coordinates.append(c)
-      elif axis.ndim > 1:
-        for i in range(axis.ndim):
-          coordinates.append(coordinate_systems.SelectedAxis(axis, i))
-      else:
-        coordinates.append(axis)
+      coordinates.extend(axis.axes)
+
   for c in coordinates:
     for dim in c.dims:
       if dim not in coords:
         raise ValueError(f'{dim=} of {c} not found in {coords.keys()=}')
       if coords[dim] != c:
         raise ValueError(f'Coordinate {c} does not match {coords[dim]=}')
-
-
-@utils.export
-def is_field(value) -> TypeGuard[Field]:
-  """Returns True if `value` is of type `Field`."""
-  return isinstance(value, Field)
 
 
 @utils.export
@@ -601,3 +589,26 @@ def wrap_like(array: jax.typing.ArrayLike, other: Field) -> Field:
   if array.shape != other.shape:
     raise ValueError(f'{array.shape=} and {other.shape=} must be equal')
   return Field(array, other.dims, other.coords)
+
+
+@utils.export
+def is_field(value) -> TypeGuard[Field]:
+  """Returns True if `value` is of type `Field`."""
+  return isinstance(value, Field)
+
+
+PyTree = Any
+
+
+@utils.export
+def tag(tree: PyTree, *dims: str | Coordinate | ellipsis | None) -> PyTree:
+  """Tag dimensions on all NamedArrays in a PyTree."""
+  tag_arrays = lambda x: x.tag(*dims) if is_field(x) else x
+  return jax.tree.map(tag_arrays, tree, is_leaf=is_field)
+
+
+@utils.export
+def untag(tree: PyTree, *dims: str | Coordinate) -> PyTree:
+  """Untag dimensions from all NamedArrays in a PyTree."""
+  untag_arrays = lambda x: x.untag(*dims) if is_field(x) else x
+  return jax.tree.map(untag_arrays, tree, is_leaf=is_field)

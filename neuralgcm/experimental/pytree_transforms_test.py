@@ -325,7 +325,7 @@ class InputsFeaturesTest(parameterized.TestCase):
         'b': expand_dims(np.arange(2)) * np.zeros(grid.shape),
         'c': expand_dims(np.arange(2)) * np.ones(grid.shape),
     }
-    timedelta = coordinates.TimeDelta.as_index(2)
+    timedelta = coordinates.TimeDelta(np.arange(2, dtype='timedelta64[h]'))
     grid_trajectory = cx.compose_coordinates(timedelta, grid)
     time = jdt.to_datetime('2000-01-01') + jdt.to_timedelta(
         12, 'h'

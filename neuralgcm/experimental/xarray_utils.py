@@ -14,7 +14,7 @@
 
 """Utilities for converting between xarray and DataObservation objects."""
 
-from typing import Hashable
+from typing import cast
 
 from dinosaur import spherical_harmonic
 from dinosaur import xarray_utils as dino_xarray_utils
@@ -28,19 +28,6 @@ import neuralgcm.experimental.jax_datetime as jdt
 import xarray
 
 
-AxisName = Hashable
-XR_TIME_NAME = 'time'
-XR_TIME_IN_MINUTES_SINCE_EPOCH_NAME = 'minutes_since_epoch'
-XR_SHORT_LON_NAME = 'lon'
-XR_SHORT_LAT_NAME = 'lat'
-XR_LON_NAME = 'longitude'
-XR_LAT_NAME = 'latitude'
-
-
-def _wrap_suffix(array: typing.Array, *names: AxisName | cx.Coordinate):
-  return cx.wrap(array).tag(..., *names)
-
-
 verify_grid_consistency = dino_xarray_utils.verify_grid_consistency
 
 
@@ -51,6 +38,7 @@ def xarray_nondimensionalize(
   return xarray.apply_ufunc(sim_units.nondimensionalize, ds)
 
 
+# TODO(shoyer): drop this in favor of coordax.Field.from_xarray
 def coordinates_from_dataset(
     ds: xarray.Dataset,
     spherical_harmonics_impl=spherical_harmonic.FastSphericalHarmonics,
@@ -68,10 +56,10 @@ def coordinates_from_dataset(
 
 def get_longitude_latitude_names(ds: xarray.Dataset) -> tuple[str, str]:
   """Infers names used for longitude and latitude in the dataset `ds`."""
-  if XR_SHORT_LON_NAME in ds.dims and XR_SHORT_LAT_NAME in ds.dims:
-    return (XR_SHORT_LON_NAME, XR_SHORT_LAT_NAME)
-  if XR_LON_NAME in ds.dims and XR_LAT_NAME in ds.dims:
-    return (XR_LON_NAME, XR_LAT_NAME)
+  if 'lon' in ds.dims and 'lat' in ds.dims:
+    return ('lon', 'lat')
+  if 'longitude' in ds.dims and 'latitude' in ds.dims:
+    return ('longitude', 'latitude')
   raise ValueError(f'No `lon/lat`|`longitude/latitude` in {ds.coords.keys()=}')
 
 
@@ -102,114 +90,47 @@ def nodal_orography_from_ds(ds: xarray.Dataset) -> xarray.DataArray:
   return orography.transpose(*lon_lat_order)
 
 
-def _xarray_to_data_dict(dataset, *, values: str = 'values'):
-  """Extracts `values` from `dataset` and returns as a dictionary."""
-  expected_dims_order = (
-      dino_xarray_utils.XR_TIME_NAME,
-      dino_xarray_utils.XR_LEVEL_NAME,
-      dino_xarray_utils.XR_LON_NAME,
-      dino_xarray_utils.XR_LAT_NAME,
-  )
-  dims = []
-  for dim in expected_dims_order:
-    if dim in dataset.dims:
-      dims.append(dim)
-
-  dataset = dataset.transpose(..., *dims)
-  data = {}
-  for k in dataset:
-    assert isinstance(k, str)  # satisfy pytype
-    v = getattr(dataset[k], values)
-    data[k] = v
-  return data
+def swap_time_to_timedelta(ds: xarray.Dataset) -> xarray.Dataset:
+  """Converts an xarray dataset with a time axis to a timedelta axis."""
+  ds = ds.assign_coords(timedelta=ds.time - ds.time[0])
+  ds = ds.swap_dims({'time': 'timedelta'})
+  return ds
 
 
-def xarray_to_data_dict(ds: xarray.Dataset, *, values: str = 'values'):
-  lon_name, lat_name = get_longitude_latitude_names(ds)
-  if lon_name != XR_SHORT_LON_NAME:
-    ds = ds.rename({lon_name: XR_SHORT_LON_NAME})
-  if lat_name != XR_SHORT_LAT_NAME:
-    ds = ds.rename({lat_name: XR_SHORT_LAT_NAME})
-  return _xarray_to_data_dict(ds, values=values)
-
-
-def xarray_to_timed_fields_dict(
+def xarray_to_timed_fields(
     ds: xarray.Dataset,
-    *,
-    values: str = 'values',
-    coords: cx.Coordinate | None = None,
-):
-  """Extracts data from `ds` to a dictionary of `StaticField`s."""
-  if coords is None:
-    coords = coordinates_from_dataset(ds)
-  data_dict = xarray_to_data_dict(ds, values=values)
-  data_dict.pop(XR_TIME_NAME, None)
-  time = jdt.to_datetime(ds[XR_TIME_NAME].data)
-  observations = {
-      k: data_specs.TimedField(_wrap_suffix(v, coords), time)
-      for k, v in data_dict.items()
+) -> dict[str, data_specs.TimedField[cx.Field]]:
+  """Converts an xarray dataset to TimedField objects.
+
+  The xarray dataset must have a 'time' coordinate variable.
+
+  Args:
+    ds: dataset to convert.
+
+  Returns:
+    A dictionary mapping variable names, excluding 'time', to TimedField
+    objects.
+  """
+  variables = cast(dict[str, xarray.DataArray], dict(ds))
+  time = variables.pop('time', None)
+  if time is None:
+    # Fall back to getting 'time' from coordinates
+    time = ds.coords['time']
+  time = jdt.to_datetime(time.data)
+  return {
+      k: data_specs.TimedField(coordinates.field_from_xarray(v), time)
+      for k, v in variables.items()
   }
-  return observations
-
-
-def xarray_to_timed_fieldset(
-    ds: xarray.Dataset,
-    *,
-    values: str = 'values',
-    coords: cx.Coordinate | None = None,
-):
-  """Extracts data from `ds` to a dictionary of `StaticField`s."""
-  if coords is None:
-    coords = coordinates_from_dataset(ds)  # use default unnamed dims for now.
-  data_dict = xarray_to_data_dict(ds, values=values)
-  data_dict.pop(XR_TIME_NAME, None)
-  time = jdt.to_datetime(ds[XR_TIME_NAME].data)
-  return data_specs.TimedObservations(
-      fields={k: _wrap_suffix(v, coords) for k, v in data_dict.items()},
-      timestamp=time,
-  )
 
 
 def timed_field_to_xarray(
-    fields_dict: dict[str, data_specs.TimedField[cx.Field]],
-    *,
-    additional_coords: dict[str, typing.Array] | None = None,
-    serialize_coords_to_attrs: bool = False,
-):
-  """Converts `fields_dict` to an xarray dataset."""
-  data_dict = {k: v.field.data for k, v in fields_dict.items()}
-  sample_obs = next(iter(fields_dict.values()))
+    fields: dict[str, data_specs.TimedField[cx.Field]],
+) -> xarray.Dataset:
+  """Converts a TimedField dictionary to an xarray dataset."""
+  ds = xarray.Dataset({k: v.field.to_xarray() for k, v in fields.items()})
+  sample_obs = next(iter(fields.values()))
   if sample_obs.timestamp is None:
     raise ValueError(f'observations do not have timestamps: {sample_obs}')
   time = sample_obs.timestamp.to_datetime64()
-  level_options = set(['sigma', 'pressure', 'level', 'layer_index'])
-  data_dims = sample_obs.field.dims
-  level_name = level_options.intersection(set(data_dims))
-  if len(level_name) != 1:
-    raise ValueError(f'Need exactly 1 match {level_options=} & {data_dims=}')
-  (level_name,) = level_name
-  vertical = sample_obs.field.coords[level_name]
-  horizontal_options = set(
-      ['longitude', 'latitude', 'longitudinal_wavenumber', 'total_wavenumber']
-  )
-  horizontal_names = horizontal_options.intersection(set(data_dims))
-  if horizontal_names == set(['longitude', 'latitude']):
-    horizontal_names = ('longitude', 'latitude')
-  elif horizontal_names == set(['longitudinal_wavenumber', 'total_wavenumber']):
-    horizontal_names = ('longitudinal_wavenumber', 'total_wavenumber')
-  else:
-    raise ValueError(f'not recognized {horizontal_names=}')
-  horizontal = cx.compose_coordinates(
-      *[sample_obs.field.coords[k] for k in horizontal_names]
-  )
-  dino_coords = coordinates.DinosaurCoordinates(
-      horizontal=horizontal, vertical=vertical
-  )
-  return dino_xarray_utils.data_to_xarray(
-      data={k: v for k, v in data_dict.items()},
-      coords=dino_coords.dinosaur_coords,
-      times=time,
-      sample_ids=None,
-      additional_coords=additional_coords,
-      serialize_coords_to_attrs=serialize_coords_to_attrs,
-  )
+  ds['time'] = (('timedelta',), time)
+  return ds

@@ -207,9 +207,9 @@ class ForecastSystem(nnx.Module, abc.ABC):
         out_axes=(nnx.Carry, 0),
     )
     (_, final_state), intermediates = unroll_fn((self, state))
-    time = coordinates.TimeDelta(np.arange(outer_steps) * inner_steps)
-    tag_prefix = lambda x: x.tag_prefix(time) if isinstance(x, cx.Field) else x
-    intermediates = jax.tree.map(tag_prefix, intermediates)
+    steps = (int(start_with_input) + np.arange(outer_steps)) * inner_steps
+    time = coordinates.TimeDelta(steps * timedelta)
+    intermediates = cx.tag(intermediates, time)
     return final_state, intermediates
 
   def inputs_from_xarray(self, ds: xarray.Dataset) -> typing.Pytree:

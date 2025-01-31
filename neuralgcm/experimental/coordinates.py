@@ -61,11 +61,13 @@ class ArrayKey:
 class TimeDelta(cx.Coordinate):
   """Coordinates that discretize data along static relative time."""
 
-  time: np.ndarray
-  offset: float = 0.0
+  deltas: np.ndarray
 
   def __post_init__(self):
-    object.__setattr__(self, 'time', np.asarray(self.time, dtype=np.float32))
+    deltas = np.asarray(self.deltas)
+    if not np.issubdtype(deltas.dtype, np.timedelta64):
+      raise ValueError(f'deltas must be a timedelta array, got {deltas.dtype=}')
+    object.__setattr__(self, 'deltas', deltas.astype('timedelta64[s]'))
 
   @property
   def dims(self):
@@ -73,15 +75,16 @@ class TimeDelta(cx.Coordinate):
 
   @property
   def shape(self):
-    return self.time.shape
+    return self.deltas.shape
 
   @property
   def fields(self):
-    return {'timedelta': cx.wrap(self.time, self)}
+    # TODO(shoyer: support jax_datetime.Timedelta arrays inside coordax.Field
+    return {}
 
   def to_xarray(self) -> dict[str, xarray.Variable]:
     variables = super().to_xarray()
-    variables['timedelta'].attrs['offset'] = self.offset
+    variables['timedelta'] = xarray.Variable(('timedelta',), self.deltas)
     return variables
 
   @classmethod
@@ -91,17 +94,22 @@ class TimeDelta(cx.Coordinate):
     dim = dims[0]
     if dim != 'timedelta':
       return cx.NoCoordinateMatch(f"dimension {dim!r} != 'timedelta'")
-    if coords['timedelta'].ndim != 1:
-      return cx.NoCoordinateMatch('timedelta coordinate is not a 1D array')
-    offset = float(coords['timedelta'].attrs.get('offset', 0.0))
-    return cls(time=coords['timedelta'].data, offset=offset)
+    if 'timedelta' not in coords:
+      return cx.NoCoordinateMatch('no associated coordinate for timedelta')
 
-  @classmethod
-  def as_index(cls, axis_size: int, offset: float = 0.0) -> TimeDelta:
-    return cls(time=np.arange(axis_size), offset=offset)
+    data = coords['timedelta'].data
+    if data.ndim != 1:
+      return cx.NoCoordinateMatch('timedelta coordinate is not a 1D array')
+
+    if not np.issubdtype(data.dtype, np.timedelta64):
+      return cx.NoCoordinateMatch(
+          f'data must be a timedelta array, got {data.dtype=}'
+      )
+
+    return cls(deltas=data)
 
   def _components(self):
-    return (self.offset, ArrayKey(self.time))
+    return (ArrayKey(self.deltas),)
 
   def __eq__(self, other):
     return (
@@ -111,6 +119,9 @@ class TimeDelta(cx.Coordinate):
 
   def __hash__(self) -> int:
     return hash(self._components())
+
+  def __getitem__(self, key: slice) -> Self:
+    return type(self)(self.deltas[key])
 
 
 #
@@ -128,17 +139,15 @@ class LonLatGrid(cx.Coordinate):
   latitude_nodes: int
   latitude_spacing: str = 'gauss'
   longitude_offset: float = 0.0
-  radius: float | None = None
+  radius: float = 1.0
   spherical_harmonics_impl: SphericalHarmonicsImpl = dataclasses.field(
       default=FastSphericalHarmonics, kw_only=True
   )
-  longitude_wavenumbers: int = dataclasses.field(
-      default=0, repr=False, kw_only=True
+  longitude_wavenumbers: int = dataclasses.field(default=0, kw_only=True)
+  total_wavenumbers: int = dataclasses.field(default=0, kw_only=True)
+  _ylm_grid: spherical_harmonic.Grid = dataclasses.field(
+      init=False, repr=False, compare=False
   )
-  total_wavenumbers: int = dataclasses.field(
-      default=0, repr=False, kw_only=True
-  )
-  _ylm_grid: spherical_harmonic.Grid = dataclasses.field(init=False, repr=False)
 
   def __post_init__(self):
     ylm_grid = spherical_harmonic.Grid(
@@ -221,7 +230,7 @@ class LonLatGrid(cx.Coordinate):
       gaussian_nodes: int,
       latitude_spacing: str = 'gauss',
       longitude_offset: float = 0.0,
-      radius: float | None = None,
+      radius: float = 1.0,
       spherical_harmonics_impl: SphericalHarmonicsImpl = FastSphericalHarmonics,
   ) -> LonLatGrid:
     """Constructs a `LonLatGrid` compatible with max_wavenumber and nodes.
@@ -233,7 +242,7 @@ class LonLatGrid(cx.Coordinate):
       latitude_spacing: either 'gauss' or 'equiangular'. This determines the
         spacing of nodal grid points in the latitudinal (north-south) direction.
       longitude_offset: the value of the first longitude node, in radians.
-      radius: radius of the sphere. If `None` a default values of `1` is used.
+      radius: radius of the sphere.
       spherical_harmonics_impl: class providing an implementation of spherical
         harmonics.
 
@@ -361,9 +370,8 @@ class LonLatGrid(cx.Coordinate):
     metadata = dict(
         total_wavenumbers=self.total_wavenumbers,
         longitude_wavenumbers=self.longitude_wavenumbers,
+        radius=self.radius,
     )
-    if self.radius is not None:
-      metadata['radius'] = self.radius
     variables['longitude'].attrs = metadata
     variables['latitude'].attrs = metadata
     return variables
@@ -403,10 +411,7 @@ class LonLatGrid(cx.Coordinate):
     longitude_nodes = coords.sizes['longitude']
     latitude_nodes = coords.sizes['latitude']
 
-    if 'radius' in coords['longitude'].attrs:
-      radius = float(coords['longitude'].attrs['radius'])
-    else:
-      radius = None
+    radius = float(coords['longitude'].attrs.get('radius', 1.0))
     total_wavenumbers = int(
         coords['longitude'].attrs.get('total_wavenumbers', 0)
     )
@@ -447,16 +452,18 @@ class SphericalHarmonicGrid(cx.Coordinate):
   longitude_wavenumbers: int
   total_wavenumbers: int
   longitude_offset: float = 0.0
-  radius: float | None = None
+  radius: float = 1.0
   spherical_harmonics_impl: SphericalHarmonicsImpl = dataclasses.field(
       default=FastSphericalHarmonics, kw_only=True
   )
-  longitude_nodes: int = dataclasses.field(default=0, repr=False, kw_only=True)
-  latitude_nodes: int = dataclasses.field(default=0, repr=False, kw_only=True)
+  longitude_nodes: int = dataclasses.field(default=0, kw_only=True)
+  latitude_nodes: int = dataclasses.field(default=0, kw_only=True)
   latitude_spacing: str = dataclasses.field(
       default='gauss', repr=False, kw_only=True
   )
-  _ylm_grid: spherical_harmonic.Grid = dataclasses.field(init=False, repr=False)
+  _ylm_grid: spherical_harmonic.Grid = dataclasses.field(
+      init=False, repr=False, compare=False
+  )
 
   def __post_init__(self):
     ylm_grid = spherical_harmonic.Grid(
@@ -540,7 +547,7 @@ class SphericalHarmonicGrid(cx.Coordinate):
       spherical_harmonics_impl: SphericalHarmonicsImpl = (
           FastSphericalHarmonics
       ),
-      radius: float | None = None,
+      radius: float = 1.0,
   ) -> SphericalHarmonicGrid:
     """Constructs a `SphericalHarmonicGrid` by specifying only wavenumbers."""
     # The number of nodes is chosen for de-aliasing.
@@ -566,7 +573,7 @@ class SphericalHarmonicGrid(cx.Coordinate):
       gaussian_nodes: int,
       latitude_spacing: str = 'gauss',
       longitude_offset: float = 0.0,
-      radius: float | None = None,
+      radius: float = 1.0,
       spherical_harmonics_impl: SphericalHarmonicsImpl = (
           FastSphericalHarmonics
       ),
@@ -580,7 +587,7 @@ class SphericalHarmonicGrid(cx.Coordinate):
       latitude_spacing: either 'gauss' or 'equiangular'. This determines the
         spacing of nodal grid points in the latitudinal (north-south) direction.
       longitude_offset: the value of the first longitude node, in radians.
-      radius: radius of the sphere. If `None` a default values of `1` is used.
+      radius: radius of the sphere.
       spherical_harmonics_impl: class providing an implementation of spherical
         harmonics.
 
@@ -710,9 +717,8 @@ class SphericalHarmonicGrid(cx.Coordinate):
         longitude_nodes=self.longitude_nodes,
         latitude_nodes=self.latitude_nodes,
         latitude_spacing=self.latitude_spacing,
+        radius=self.radius,
     )
-    if self.radius is not None:
-      metadata['radius'] = self.radius
     variables['longitude_wavenumber'].attrs = metadata
     variables['total_wavenumber'].attrs = metadata
     return variables
@@ -735,10 +741,7 @@ class SphericalHarmonicGrid(cx.Coordinate):
       return cx.NoCoordinateMatch('total_wavenumber is not a 1D coordinate')
 
     longitude_wavenumbers = (coords.sizes['longitude_wavenumber'] + 1) // 2
-    if 'radius' in coords['longitude_wavenumber'].attrs:
-      radius = float(coords['longitude_wavenumber'].attrs['radius'])
-    else:
-      radius = None
+    radius = float(coords['longitude_wavenumber'].attrs.get('radius', 1.0))
     longitude_offset = float(
         coords['longitude_wavenumber'].attrs.get('longitude_offset', 0.0)
     )
@@ -993,11 +996,22 @@ class PressureLevels(cx.Coordinate):
       cls, dims: tuple[str, ...], coords: xarray.Coordinates
   ) -> Self | cx.NoCoordinateMatch:
     dim = dims[0]
-    if dim != 'pressure':
-      return cx.NoCoordinateMatch(f"dimension {dim!r} != 'pressure'")
-    if coords['pressure'].ndim != 1:
+    if dim not in {'level', 'pressure'}:
+      return cx.NoCoordinateMatch(
+          f"dimension {dim!r} is not 'pressure' or 'level'"
+      )
+    if coords[dim].ndim != 1:
       return cx.NoCoordinateMatch('pressure coordinate is not a 1D array')
-    return cls(centers=coords['pressure'].data)
+    centers = coords[dim].data
+    if not 0 < centers[0] < 100:
+      return cx.NoCoordinateMatch(
+          f'pressure levels must start between 0 and 100, got: {centers}'
+      )
+    if not 900 < centers[-1] < 1025:
+      return cx.NoCoordinateMatch(
+          f'pressure levels must end between 900 and 1025, got: {centers}'
+      )
+    return cls(centers=centers)
 
 
 @jax.tree_util.register_static

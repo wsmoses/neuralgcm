@@ -23,7 +23,6 @@ import jax
 from neuralgcm.experimental import coordax as cx
 from neuralgcm.experimental import typing
 import neuralgcm.experimental.jax_datetime as jdt
-from penzai.core import struct
 
 
 F = TypeVar('F', cx.Field, cx.Coordinate)
@@ -36,9 +35,10 @@ def _extract_coordinate(field: cx.Field):
   return cx.compose_coordinates(*[field.coords[d] for d in field.dims])
 
 
-@struct.pytree_dataclass
+@jax.tree_util.register_dataclass
+@dataclasses.dataclass
 class TimedObservations(
-    Generic[F], typing.ObservationData, typing.ObservationSpecs, struct.Struct
+    Generic[F], typing.ObservationData, typing.ObservationSpecs
 ):
   """Specifies data or specs for a collection of observations at a given time.
 
@@ -51,8 +51,8 @@ class TimedObservations(
     timestamp: A timestamp of the observations.
   """
 
-  fields: dict[str, F] = dataclasses.field(metadata={'pytree_node': True})
-  timestamp: jdt.Datetime = dataclasses.field(metadata={'pytree_node': True})
+  fields: dict[str, F]
+  timestamp: jdt.Datetime
 
   def get_specs(self) -> TimedObservations:
     if_field = lambda x: isinstance(x, cx.Field)
@@ -60,10 +60,9 @@ class TimedObservations(
     return jax.tree.map(to_coord, self, is_leaf=if_field)
 
 
-@struct.pytree_dataclass
-class TimedField(
-    Generic[F], typing.ObservationData, typing.ObservationSpecs, struct.Struct
-):
+@jax.tree_util.register_dataclass
+@dataclasses.dataclass
+class TimedField(Generic[F], typing.ObservationData, typing.ObservationSpecs):
   """Specifies data or specs for a single observations at a given time.
 
   This object is a self-dual from ObservationData/ObservationSpecs perspective,
@@ -76,10 +75,8 @@ class TimedField(
     timestamp: A timestamp of the observation.
   """
 
-  field: F = dataclasses.field(metadata={'pytree_node': True})
-  timestamp: jdt.Datetime | None = dataclasses.field(
-      default=None, metadata={'pytree_node': True}
-  )
+  field: F
+  timestamp: jdt.Datetime | None = None
 
   def get_specs(self) -> TimedField:
     if_field = lambda x: isinstance(x, cx.Field)

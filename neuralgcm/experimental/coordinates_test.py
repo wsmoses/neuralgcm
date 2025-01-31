@@ -71,8 +71,8 @@ class CoordinatesTest(parameterized.TestCase):
           testcase_name='batched_trajectory',
           coords=cx.compose_coordinates(
               cx.NamedAxis('batch', 7),
-              coordinates.TimeDelta(np.arange(5) / 2),
-              coordinates.PressureLevels([100, 200, 800, 1000]),
+              coordinates.TimeDelta(np.arange(5) * np.timedelta64(1, 'h')),
+              coordinates.PressureLevels([50, 200, 800, 1000]),
               coordinates.LonLatGrid.T21(),
           ),
           expected_dims=(

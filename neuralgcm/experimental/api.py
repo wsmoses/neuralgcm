@@ -76,7 +76,7 @@ class ForecastSystem(nnx.Module, abc.ABC):
   @abc.abstractmethod
   def assimilate_prognostics(
       self,
-      observations: typing.ObservationData,
+      observations: typing.Pytree,
       dynamic_inputs: typing.Pytree | None = None,
       rng: typing.PRNGKeyArray | None = None,
       initial_state: typing.ModelState | None = None,
@@ -93,14 +93,14 @@ class ForecastSystem(nnx.Module, abc.ABC):
   def observe_from_prognostics(
       self,
       prognostics: typing.Pytree,
-      query: typing.ObservationSpecs,
+      query: typing.Pytree,
       dynamic_inputs: typing.Pytree | None = None,
   ) -> typing.Pytree:
     raise NotImplementedError()
 
   def assimilate(
       self,
-      observations: typing.ObservationData,
+      observations: typing.Pytree,
       dynamic_inputs: typing.Pytree | None = None,
       rng: typing.PRNGKeyArray | None = None,
       initial_state: typing.ModelState | None = None,
@@ -128,7 +128,7 @@ class ForecastSystem(nnx.Module, abc.ABC):
   def observe(
       self,
       state: typing.ModelState,
-      query: typing.ObservationSpecs,
+      query: typing.Pytree,
       dynamic_inputs: typing.Pytree | None = None,
   ) -> typing.Pytree:
     self.update_dynamic_inputs(dynamic_inputs)

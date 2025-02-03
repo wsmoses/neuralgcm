@@ -18,8 +18,9 @@
 from neuralgcm.experimental.coordax.coordinate_systems import (
     CartesianProduct as CartesianProduct,
     Coordinate as Coordinate,
+    DummyAxis as DummyAxis,
     LabeledAxis as LabeledAxis,
-    NamedAxis as NamedAxis,
+    SizedAxis as SizedAxis,
     NoCoordinateMatch as NoCoordinateMatch,
     SelectedAxis as SelectedAxis,
     compose_coordinates as compose_coordinates,

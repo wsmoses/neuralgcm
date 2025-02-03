@@ -56,16 +56,25 @@ class AdhocCoordinate(coordax.Coordinate):
   def from_xarray(cls, dims, coords):
     return coordax.NoCoordinateMatch('not a match')
 
+
 AdhocCoordinate.__module__ = 'adhoc'
 
 
 class XarrayTest(absltest.TestCase):
 
-  def test_field_to_data_array_with_named_axis(self):
+  def test_field_to_data_array_without_axes(self):
     data = np.arange(2 * 3).reshape((2, 3))
     field = coordax.wrap(data, 'x', 'y')
     actual = field.to_xarray()
     expected = xarray.DataArray(data, dims=['x', 'y'])
+    xarray.testing.assert_identical(actual, expected)
+
+  def test_field_to_data_array_with_sized_axis(self):
+    data = np.arange(3)
+    axis = coordax.SizedAxis('x', 3)
+    field = coordax.wrap(data, axis)
+    actual = field.to_xarray()
+    expected = xarray.DataArray(data, dims=['x'])
     xarray.testing.assert_identical(actual, expected)
 
   def test_field_to_data_array_with_labeled_axis(self):
@@ -130,6 +139,19 @@ class XarrayTest(absltest.TestCase):
     expected = coordax.wrap(data, 'x', coordax.LabeledAxis('y', [1, 2, 3]))
     testing.assert_fields_equal(actual, expected)
 
+  def test_data_array_to_field_with_sized_and_labeled_axis(self):
+    data = np.arange(2 * 3).reshape((2, 3))
+    data_array = xarray.DataArray(
+        data=data, dims=['x', 'y'], coords={'y': [1, 2, 3]}
+    )
+    actual = coordax.Field.from_xarray(
+        data_array, coord_types=[coordax.SizedAxis, coordax.LabeledAxis]
+    )
+    expected = coordax.wrap(
+        data, coordax.SizedAxis('x', 2), coordax.LabeledAxis('y', [1, 2, 3])
+    )
+    testing.assert_fields_equal(actual, expected)
+
   def test_data_array_to_field_no_match(self):
     # pylint: disable=line-too-long
     data = np.arange(2 * 3).reshape((2, 3))
@@ -150,10 +172,10 @@ class XarrayTest(absltest.TestCase):
             Dimensions without coordinates: x
 
             Reasons why coordinate matching failed:
-            neuralgcm.experimental.coordax.NamedAxis: can only reconstruct NamedAxis objects from xarray dimensions without associated coordinate variables, but found a coordinate variable for dimension 'y'"""
+            neuralgcm.experimental.coordax.SizedAxis: can only reconstruct SizedAxis objects from xarray dimensions without associated coordinate variables, but found a coordinate variable for dimension 'y'"""
         ),
     ):
-      coordax.Field.from_xarray(data_array, coord_types=[coordax.NamedAxis])
+      coordax.Field.from_xarray(data_array, coord_types=[coordax.SizedAxis])
 
     with self.assertRaisesWithLiteralMatch(
         ValueError,

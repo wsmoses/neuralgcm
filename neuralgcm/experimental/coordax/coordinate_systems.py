@@ -128,7 +128,7 @@ class Coordinate(abc.ABC):
         values.
 
     Returns:
-      A matching instance of this coordinate, or `NoCoordinateMatch` if the
+      A matching instance of this coordinate or `NoCoordinateMatch` if this
       coordinate does not match the xarray dimensions and coordinates.
     """
     raise NotImplementedError('from_xarray not implemented')
@@ -288,8 +288,8 @@ class CartesianProduct(Coordinate):
 @utils.export
 @jax.tree_util.register_static
 @dataclasses.dataclass(frozen=True)
-class NamedAxis(Coordinate):
-  """One dimensional coordinate that only dimension size."""
+class SizedAxis(Coordinate):
+  """One dimensional coordinate with fixed size but no associated fields."""
 
   name: str
   size: int
@@ -307,7 +307,7 @@ class NamedAxis(Coordinate):
     return {}
 
   def __repr__(self):
-    return f'coordax.NamedAxis({self.name!r}, size={self.size})'
+    return f'coordax.SizedAxis({self.name!r}, size={self.size})'
 
   @classmethod
   def from_xarray(
@@ -316,11 +316,64 @@ class NamedAxis(Coordinate):
     dim = dims[0]
     if dim in coords:
       return NoCoordinateMatch(
-          'can only reconstruct NamedAxis objects from xarray dimensions'
+          'can only reconstruct SizedAxis objects from xarray dimensions'
           ' without associated coordinate variables, but found a coordinate'
           f' variable for dimension {dim!r}'
       )
+    for name, coord in coords.variables.items():
+      if dim in coord.dims:
+        return NoCoordinateMatch(
+            'can only reconstruct SizedAxis objects from xarray dimensions'
+            ' if the dimensions is not found on any coordinate variables, but '
+            f' found a coordinate variable for dimension {dim!r} on {name!r}'
+        )
     return cls(dim, size=coords.sizes[dim])
+
+
+@utils.export
+@dataclasses.dataclass(frozen=True)
+class DummyAxis(Coordinate):
+  """Dummy coordinate for dimensions without associated coordinate values.
+
+  DummyAxis objects cannot be instantiated, but this class can be used in the
+  `coord_types` argument to `Field.from_xarray` to match dimensions that do not
+  have associated coordinate values.
+  """
+
+  name: str
+
+  def __post_init__(self):
+    raise TypeError('DummyAxis cannot be instantiated')
+
+  @property
+  def dims(self) -> tuple[str, ...]:
+    return (self.name,)
+
+  @property
+  def shape(self) -> tuple[int, ...]:
+    return (0,)
+
+  @property
+  def fields(self) -> dict[str, fields.Field]:
+    return {}
+
+  def __repr__(self):
+    return f'coordax.DummyAxis({self.name!r})'
+
+  @classmethod
+  def from_xarray(
+      cls, dims: tuple[str, ...], coords: xarray.Coordinates
+  ) -> Self | NoCoordinateMatch:
+    dim = dims[0]
+    for name, coord in coords.variables.items():
+      if dim in coord.dims:
+        return NoCoordinateMatch(
+            f'cannot omit a Coordinate object for dimension {dim!r}'
+            f' because it is used by at least one coordinate variable: {name!r}'
+        )
+    result = object.__new__(cls)
+    object.__setattr__(result, 'name', dim)
+    return result
 
 
 # TODO(dkochkov): consider storing tuple values instead of np.ndarray (which

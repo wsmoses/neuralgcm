@@ -50,24 +50,6 @@ def _dimension_names(*names: str | Coordinate) -> tuple[str, ...]:
   return sum([dims_or_name_tuple(c) for c in names], start=tuple())
 
 
-def _validate_matching_coords(
-    *axis_order: str | Coordinate,
-    coords: dict[str, Coordinate],
-):
-  """Validates `axis_order` entries match with coordinates in `coords`."""
-  coordinates = []
-  for axis in axis_order:
-    if isinstance(axis, Coordinate):
-      coordinates.extend(axis.axes)
-
-  for c in coordinates:
-    for dim in c.dims:
-      if dim not in coords:
-        raise ValueError(f'{dim=} of {c} not found in {coords.keys()=}')
-      if coords[dim] != c:
-        raise ValueError(f'Coordinate {c} does not match {coords[dim]=}')
-
-
 @utils.export
 def cmap(
     fun: Callable[..., Any], out_axes: dict[str, int] | None = None
@@ -125,7 +107,7 @@ def _cmap_with_doc(
     def _wrap_field(leaf):
       return Field.from_namedarray(
           named_array=leaf,
-          coords={k: all_coords[k] for k in leaf.dims if k is not None},
+          coords={k: all_coords[k] for k in leaf.dims if k in all_coords},
       )
 
     return jax.tree.map(_wrap_field, result, is_leaf=named_axes.is_namedarray)
@@ -216,10 +198,6 @@ class Field:
     if coords is None:
       coords = {}
 
-    for dim, size in named_array.named_shape.items():
-      if dim not in coords:
-        coords[dim] = coordinate_systems.NamedAxis(dim, size=size)
-
     self._named_array = named_array
     self._coords = coords
     self._check_valid()
@@ -241,16 +219,13 @@ class Field:
             f'dims={(dim,)!r} but got {coord.dims=}'
         )
 
-    # consistency of coordinates and named array
     data_dims = set(self.named_array.named_dims)
     keys_dims = set(self.coords.keys())
-    coord_dims = set(
-        itertools.chain.from_iterable(c.dims for c in self.coords.values())
-    )
-    if not (data_dims == keys_dims == coord_dims):
+    if not keys_dims <= data_dims:
       raise ValueError(
-          'Field dimension names must be the same across data, keys and '
-          f'coordinates, got {data_dims=}, {keys_dims=} and {coord_dims=}.'
+          'coordinate keys must be a subset of the named dimensions of the '
+          f'underlying named array, got coordinate keys {keys_dims} vs '
+          f'data dimensions {data_dims}'
       )
 
     for dim, coord in self.coords.items():
@@ -276,7 +251,7 @@ class Field:
       data_array: xarray.DataArray,
       coord_types: Sequence[type[Coordinate]] = (
           coordinate_systems.LabeledAxis,
-          coordinate_systems.NamedAxis,
+          coordinate_systems.DummyAxis,
       ),
   ) -> Self:
     """Converts an xarray.DataArray into a coordax.Field.
@@ -285,9 +260,8 @@ class Field:
       data_array: xarray.DataArray to convert into a Field.
       coord_types: sequence of coordax.Coordinate subclasses with `from_xarray`
         methods defined. The first coordinate class that returns a coordinate
-        object (indicating a match) will be used. By default, coordinates are
-        constructed out of generic coordax.LabeledAxis and coordax.NamedAxis
-        objects.
+        object (indicating a match) will be used. By default, coordinates will
+        use only generic coordax.LabeledAxis objects.
 
     Returns:
       A coordax.Field object with the same data as the input xarray.DataArray.
@@ -325,7 +299,11 @@ class Field:
 
     while dims:
       coord = get_next_match()
-      coords.append(coord)
+      coords.append(
+          coord.name
+          if isinstance(coord, coordinate_systems.DummyAxis)
+          else coord
+      )
       assert coord.ndim > 0  # dimensions will shrink by at least one
       dims = dims[coord.ndim :]
 
@@ -442,9 +420,31 @@ class Field:
       )
     return self.data
 
+  def _validate_matching_coords(
+      self, dims_or_coords: Sequence[str | Coordinate]
+  ):
+    """Validate that given coordinates are all found on this field."""
+    axes = []
+    for part in dims_or_coords:
+      if isinstance(part, Coordinate):
+        axes.extend(part.axes)
+
+    for c in axes:
+      [dim] = c.dims
+      if dim not in self.coords:
+        raise ValueError(
+            f'coordinate not found on this field:\n{c}\n'
+            f'not found in coordinates {list(self.coords)}'
+        )
+      if self.coords[dim] != c:
+        raise ValueError(
+            'coordinate not equal to the corresponding coordinate on this'
+            f' field:\n{c}\nvs\n{self.coords[dim]}'
+        )
+
   def untag(self, *axis_order: str | Coordinate) -> Field:
     """Returns a view of the field with the requested axes made positional."""
-    _validate_matching_coords(*axis_order, coords=self.coords)
+    self._validate_matching_coords(axis_order)
     untag_dims = _dimension_names(*axis_order)
     named_array = self.named_array.untag(*untag_dims)
     coords = {k: v for k, v in self.coords.items() if k not in untag_dims}
@@ -468,7 +468,7 @@ class Field:
   # positional only ndarray method.
   def order_as(self, *axis_order: str | Coordinate) -> Field:
     """Returns a field with the axes in the given order."""
-    _validate_matching_coords(*axis_order, coords=self.coords)
+    self._validate_matching_coords(axis_order)
     ordered_dims = _dimension_names(*axis_order)
     ordered_array = self.named_array.order_as(*ordered_dims)
     result = Field.from_namedarray(ordered_array, self.coords)
@@ -481,7 +481,7 @@ class Field:
           '{\n'
           + '\n'.join(
               textwrap.indent(f'{dim!r}: {self.coords[dim]},', prefix=' ' * 12)
-              for dim in self.named_dims
+              for dim in self.coords
           )
           + '\n        }'
       )

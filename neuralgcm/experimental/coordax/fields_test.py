@@ -74,21 +74,18 @@ class FieldTest(parameterized.TestCase):
 
   def test_field_constructor_default_coords(self):
     field = coordax.Field(np.zeros((2, 3, 4)), dims=('x', None, 'z'))
-    expected_coords = {
-        'x': coordax.NamedAxis('x', 2),
-        'z': coordax.NamedAxis('z', 4),
-    }
+    expected_coords = {}
     self.assertEqual(field.coords, expected_coords)
 
   def test_field_constructor_invalid(self):
     product_xy = coordax.CartesianProduct(
-        (coordax.NamedAxis('x', 2), coordax.NamedAxis('y', 3))
+        (coordax.SizedAxis('x', 2), coordax.SizedAxis('y', 3))
     )
     with self.assertRaisesWithLiteralMatch(
         ValueError,
         'all coordinates in the coords dict must be 1D, got'
-        " CartesianProduct(coordinates=(coordax.NamedAxis('x', size=2),"
-        " coordax.NamedAxis('y', size=3))) for dimension x. Consider using"
+        " CartesianProduct(coordinates=(coordax.SizedAxis('x', size=2),"
+        " coordax.SizedAxis('y', size=3))) for dimension x. Consider using"
         ' Field.tag() instead to associate multi-dimensional coordinates.',
     ):
       coordax.Field(np.zeros(3), coords={'x': product_xy})
@@ -102,19 +99,19 @@ class FieldTest(parameterized.TestCase):
           np.zeros((2, 3)),
           dims=('x', 'y'),
           coords={
-              'x': coordax.NamedAxis('y', 2),
-              'y': coordax.NamedAxis('x', 3),
+              'x': coordax.SizedAxis('y', 2),
+              'y': coordax.SizedAxis('x', 3),
           },
       )
 
-    with self.assertRaisesRegex(
+    with self.assertRaisesWithLiteralMatch(
         ValueError,
-        r'Field dimension names must be the same across data, keys and'
-        r" coordinates\, got data_dims\=\{'x'\}\, keys_dims\=\{.+\} and"
-        r' coord_dims\=\{.+\}',
+        'coordinate keys must be a subset of the named dimensions of the'
+        " underlying named array, got coordinate keys {'y'} vs data"
+        " dimensions {'x'}",
     ):
       coordax.Field(
-          np.zeros(3), dims=('x',), coords={'y': coordax.NamedAxis('y', 3)}
+          np.zeros(3), dims=('x',), coords={'y': coordax.SizedAxis('y', 3)}
       )
 
     with self.assertRaisesWithLiteralMatch(
@@ -125,10 +122,10 @@ class FieldTest(parameterized.TestCase):
                 data=Array([0., 0., 0.], dtype=float32),
                 dims=('x',),
             )
-            coordax.NamedAxis('x', size=4)"""),
+            coordax.SizedAxis('x', size=4)"""),
     ):
       coordax.Field(
-          np.zeros(3), dims=('x',), coords={'x': coordax.NamedAxis('x', 4)}
+          np.zeros(3), dims=('x',), coords={'x': coordax.SizedAxis('x', 4)}
       )
 
   def test_field_binary_op_sum_simple(self):
@@ -161,7 +158,6 @@ class FieldTest(parameterized.TestCase):
                         [4, 5, 6]], dtype=int32),
             dims=('x', 'y'),
             coords={
-                'x': coordax.NamedAxis('x', size=2),
                 'y': coordax.LabeledAxis('y', ticks=array([7, 8, 9])),
             },
         )""")
@@ -182,14 +178,14 @@ class FieldTest(parameterized.TestCase):
       dict(
           testcase_name='coord_&_name',
           array=np.arange(4),
-          tags=(coordax.NamedAxis('idx', 4),),
+          tags=(coordax.SizedAxis('idx', 4),),
           untags=('idx',),
       ),
       dict(
           testcase_name='coord_&_coord',
           array=np.arange(4),
-          tags=(coordax.NamedAxis('idx', 4),),
-          untags=(coordax.NamedAxis('idx', 4),),
+          tags=(coordax.SizedAxis('idx', 4),),
+          untags=(coordax.SizedAxis('idx', 4),),
       ),
       dict(
           testcase_name='names_&_partial_name',
@@ -199,62 +195,45 @@ class FieldTest(parameterized.TestCase):
           full_unwrap=False,
       ),
       dict(
-          testcase_name='names_&_partial_coord',
-          array=np.arange(2 * 3).reshape((2, 3)),
-          tags=('x', 'y'),
-          untags=(coordax.NamedAxis('y', 3),),
-          full_unwrap=False,
-      ),
-      dict(
-          testcase_name='names_&_coords',
-          array=np.arange(2 * 3).reshape((2, 3)),
-          tags=('x', 'y'),
-          untags=(
-              coordax.NamedAxis('x', 2),
-              coordax.NamedAxis('y', 3),
-          ),
-          full_unwrap=True,
-      ),
-      dict(
-          testcase_name='names_&_product_coord',
-          array=np.arange(2 * 3).reshape((2, 3)),
-          tags=('x', 'y'),
-          untags=(
-              coordax.compose_coordinates(
-                  coordax.NamedAxis('x', 2),
-                  coordax.NamedAxis('y', 3),
-              ),
-          ),
-          full_unwrap=True,
-      ),
-      dict(
           testcase_name='product_coord_&_product_coord',
           array=np.arange(2 * 3).reshape((2, 3)),
           tags=(
               coordax.compose_coordinates(
-                  coordax.NamedAxis('x', 2),
-                  coordax.NamedAxis('y', 3),
+                  coordax.SizedAxis('x', 2),
+                  coordax.SizedAxis('y', 3),
               ),
           ),
           untags=(
               coordax.compose_coordinates(
-                  coordax.NamedAxis('x', 2),
-                  coordax.NamedAxis('y', 3),
+                  coordax.SizedAxis('x', 2),
+                  coordax.SizedAxis('y', 3),
               ),
           ),
+          full_unwrap=True,
+      ),
+      dict(
+          testcase_name='product_coord_&_names',
+          array=np.arange(2 * 3).reshape((2, 3)),
+          tags=(
+              coordax.compose_coordinates(
+                  coordax.SizedAxis('x', 2),
+                  coordax.SizedAxis('y', 3),
+              ),
+          ),
+          untags=('x', 'y'),
           full_unwrap=True,
       ),
       dict(
           testcase_name='mixed_&_names',
           array=np.arange(2 * 3 * 4).reshape((2, 4, 3)),
-          tags=('x', coordax.NamedAxis('y', 4), 'z'),
+          tags=('x', coordax.SizedAxis('y', 4), 'z'),
           untags=('y', 'z'),
           full_unwrap=False,
       ),
       dict(
           testcase_name='mixed_&_wrong_names',
           array=np.arange(2 * 3 * 4).reshape((2, 4, 3)),
-          tags=('x', coordax.NamedAxis('y_prime', 4), 'z'),
+          tags=('x', coordax.SizedAxis('y_prime', 4), 'z'),
           untags=('y', 'z'),
           full_unwrap=False,
           should_raise_on_untag=True,
@@ -358,7 +337,7 @@ class FieldTest(parameterized.TestCase):
     """Tests that vmap/scan work with Field with leading positional axes."""
     x_coord = coordax.LabeledAxis('x', np.array([2, 3, 7]))
     batch, length = 4, 10
-    vmap_axis = coordax.NamedAxis('vmap', batch)
+    vmap_axis = coordax.SizedAxis('vmap', batch)
     scan_axis = coordax.LabeledAxis('scan', np.arange(length))
 
     def initialize(data):

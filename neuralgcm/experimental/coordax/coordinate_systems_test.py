@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from absl.testing import absltest
 from absl.testing import parameterized
 from neuralgcm.experimental import coordax
 from neuralgcm.experimental.coordax import coordinate_systems
@@ -20,7 +21,7 @@ import numpy as np
 class CoordinateSystemsTest(parameterized.TestCase):
 
   PRODUCT_XY = coordax.CartesianProduct(
-      (coordax.NamedAxis('x', 2), coordax.NamedAxis('y', 3))
+      (coordax.SizedAxis('x', 2), coordax.SizedAxis('y', 3))
   )
 
   @parameterized.named_parameters(
@@ -31,24 +32,24 @@ class CoordinateSystemsTest(parameterized.TestCase):
       ),
       dict(
           testcase_name='single_other_axis',
-          coordinates=(coordax.NamedAxis('x', 2),),
-          expected=(coordax.NamedAxis('x', 2),),
+          coordinates=(coordax.SizedAxis('x', 2),),
+          expected=(coordax.SizedAxis('x', 2),),
       ),
       dict(
           testcase_name='single_selected_axis',
           coordinates=(
-              coordax.SelectedAxis(coordax.NamedAxis('x', 2), axis=0),
+              coordax.SelectedAxis(coordax.SizedAxis('x', 2), axis=0),
           ),
-          expected=(coordax.NamedAxis('x', 2),),
+          expected=(coordax.SizedAxis('x', 2),),
       ),
       dict(
           testcase_name='pair_of_other_axes',
           coordinates=(
-              coordax.NamedAxis('x', 2),
+              coordax.SizedAxis('x', 2),
               coordax.LabeledAxis('y', np.arange(3)),
           ),
           expected=(
-              coordax.NamedAxis('x', 2),
+              coordax.SizedAxis('x', 2),
               coordax.LabeledAxis('y', np.arange(3)),
           ),
       ),
@@ -81,22 +82,22 @@ class CoordinateSystemsTest(parameterized.TestCase):
           coordinates=(
               coordax.SelectedAxis(PRODUCT_XY, axis=0),
               coordax.SelectedAxis(PRODUCT_XY, axis=1),
-              coordax.NamedAxis('z', 4),
+              coordax.SizedAxis('z', 4),
           ),
           expected=(
               PRODUCT_XY,
-              coordax.NamedAxis('z', 4),
+              coordax.SizedAxis('z', 4),
           ),
       ),
       dict(
           testcase_name='selections_with_preceeding',
           coordinates=(
-              coordax.NamedAxis('z', 4),
+              coordax.SizedAxis('z', 4),
               coordax.SelectedAxis(PRODUCT_XY, axis=0),
               coordax.SelectedAxis(PRODUCT_XY, axis=1),
           ),
           expected=(
-              coordax.NamedAxis('z', 4),
+              coordax.SizedAxis('z', 4),
               PRODUCT_XY,
           ),
       ),
@@ -104,12 +105,12 @@ class CoordinateSystemsTest(parameterized.TestCase):
           testcase_name='selections_split',
           coordinates=(
               coordax.SelectedAxis(PRODUCT_XY, axis=0),
-              coordax.NamedAxis('z', 4),
+              coordax.SizedAxis('z', 4),
               coordax.SelectedAxis(PRODUCT_XY, axis=1),
           ),
           expected=(
               coordax.SelectedAxis(PRODUCT_XY, axis=0),
-              coordax.NamedAxis('z', 4),
+              coordax.SizedAxis('z', 4),
               coordax.SelectedAxis(PRODUCT_XY, axis=1),
           ),
       ),
@@ -117,21 +118,21 @@ class CoordinateSystemsTest(parameterized.TestCase):
           testcase_name='two_selected_axes_consolidate_after',
           coordinates=(
               coordax.SelectedAxis(PRODUCT_XY, axis=0),
-              coordax.SelectedAxis(coordax.NamedAxis('x', 4), axis=0),
+              coordax.SelectedAxis(coordax.SizedAxis('x', 4), axis=0),
           ),
           expected=(
               coordax.SelectedAxis(PRODUCT_XY, axis=0),
-              coordax.NamedAxis('x', 4),
+              coordax.SizedAxis('x', 4),
           ),
       ),
       dict(
           testcase_name='two_selected_axes_consolidate_before',
           coordinates=(
-              coordax.SelectedAxis(coordax.NamedAxis('x', 4), axis=0),
+              coordax.SelectedAxis(coordax.SizedAxis('x', 4), axis=0),
               coordax.SelectedAxis(PRODUCT_XY, axis=0),
           ),
           expected=(
-              coordax.NamedAxis('x', 4),
+              coordax.SizedAxis('x', 4),
               coordax.SelectedAxis(PRODUCT_XY, axis=0),
           ),
       ),
@@ -152,25 +153,25 @@ class CoordinateSystemsTest(parameterized.TestCase):
       dict(
           testcase_name='selected_axis_simplified',
           coordinates=(
-              coordax.SelectedAxis(coordax.NamedAxis('x', 4), axis=0),
-              coordax.NamedAxis('z', 7),
+              coordax.SelectedAxis(coordax.SizedAxis('x', 4), axis=0),
+              coordax.SizedAxis('z', 7),
           ),
           expected=coordax.CartesianProduct(
-              (coordax.NamedAxis('x', 4), coordax.NamedAxis('z', 7))
+              (coordax.SizedAxis('x', 4), coordax.SizedAxis('z', 7))
           ),
       ),
       dict(
           testcase_name='cartesian_product_unraveled',
           coordinates=(
-              coordax.NamedAxis('x', 7),
+              coordax.SizedAxis('x', 7),
               coordax.CartesianProduct(
-                  (coordax.NamedAxis('y', 7), coordax.NamedAxis('z', 4))
+                  (coordax.SizedAxis('y', 7), coordax.SizedAxis('z', 4))
               ),
           ),
           expected=coordax.CartesianProduct((
-              coordax.NamedAxis('x', 7),
-              coordax.NamedAxis('y', 7),
-              coordax.NamedAxis('z', 4),
+              coordax.SizedAxis('x', 7),
+              coordax.SizedAxis('y', 7),
+              coordax.SizedAxis('z', 4),
           )),
       ),
       dict(
@@ -179,16 +180,26 @@ class CoordinateSystemsTest(parameterized.TestCase):
               coordax.SelectedAxis(PRODUCT_XY, axis=0),
               coordax.CartesianProduct((
                   coordax.SelectedAxis(PRODUCT_XY, axis=1),
-                  coordax.NamedAxis('z', 4),
+                  coordax.SizedAxis('z', 4),
               )),
           ),
           expected=coordax.CartesianProduct((
-              coordax.NamedAxis('x', 2),
-              coordax.NamedAxis('y', 3),
-              coordax.NamedAxis('z', 4),
+              coordax.SizedAxis('x', 2),
+              coordax.SizedAxis('y', 3),
+              coordax.SizedAxis('z', 4),
           )),
       ),
   )
   def test_compose_coordinates(self, coordinates, expected):
     actual = coordinate_systems.compose_coordinates(*coordinates)
     self.assertEqual(actual, expected)
+
+  def test_dummy_axis(self):
+    with self.assertRaisesWithLiteralMatch(
+        TypeError, 'DummyAxis cannot be instantiated'
+    ):
+      coordax.DummyAxis('x')
+
+
+if __name__ == '__main__':
+  absltest.main()

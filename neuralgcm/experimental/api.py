@@ -17,10 +17,12 @@ from __future__ import annotations
 
 import abc
 import dataclasses
-from typing import Any, Callable
+from typing import Any, Callable, Type, TypeGuard
 
 from etils import epath
 import fiddle as fdl
+from fiddle import selectors
+from fiddle import tagging
 from flax import nnx
 import jax
 from neuralgcm.experimental import checkpointing  # pylint: disable=unused-import
@@ -28,7 +30,9 @@ from neuralgcm.experimental import coordax as cx
 from neuralgcm.experimental import coordinates
 from neuralgcm.experimental import diagnostics
 from neuralgcm.experimental import dynamic_io
+from neuralgcm.experimental import fiddle_tags  # pylint: disable=unused-import
 from neuralgcm.experimental import module_utils
+from neuralgcm.experimental import parallelism
 from neuralgcm.experimental import random_processes
 from neuralgcm.experimental import time_integrators
 from neuralgcm.experimental import typing
@@ -37,6 +41,10 @@ import numpy as np
 import orbax.checkpoint as ocp
 import pandas as pd
 import xarray
+
+
+MeshType = Type[parallelism.Mesh]
+TagOrMeshType = tagging.TagType | MeshType
 
 
 def calculate_sub_steps(
@@ -58,6 +66,9 @@ class ForecastSystem(nnx.Module, abc.ABC):
   """Base class for forecast systems."""
 
   _metadata: dict = dataclasses.field(default_factory=dict, kw_only=True)  # pylint: disable=g-bare-generic
+  mesh: parallelism.Mesh = dataclasses.field(
+      default_factory=parallelism.Mesh, kw_only=True
+  )
 
   @property
   def metadata(self):
@@ -244,10 +255,79 @@ class ForecastSystem(nnx.Module, abc.ABC):
     }
 
   @classmethod
+  def from_fiddle_config(
+      cls,
+      config: fdl.Config[ForecastSystem],
+      spmd_mesh_updates: (
+          dict[TagOrMeshType, jax.sharding.Mesh | None] | None
+      ) = None,
+      array_partitions_updates: (
+          dict[TagOrMeshType, parallelism.ArrayPartitions] | None
+      ) = None,
+      field_partitions_updates: (
+          dict[TagOrMeshType, parallelism.FieldPartitions] | None
+      ) = None,
+  ):
+    """Builds a model from a fiddle config with updated mesh properties."""
+    model_config = fdl.deepcopy_with(config)  # don't modify the original.
+    if not issubclass(model_config.__fn_or_cls__, ForecastSystem):
+      raise ValueError(
+          f'Fiddle config defines {config.__fn_or_cls__} '
+          'which does not inherit from the ForecastSystem class'
+      )
+    # Update spmd_mesh via selectors of tags or mesh subclasses.
+    spmd_mesh_updates = spmd_mesh_updates or {}
+    array_partitions_updates = array_partitions_updates or {}
+    field_partitions_updates = field_partitions_updates or {}
+
+    def _is_tag(key: TagOrMeshType) -> TypeGuard[tagging.TagType]:
+      return isinstance(key, fdl.Tag)
+
+    def _is_mesh(key: TagOrMeshType) -> TypeGuard[Type[parallelism.Mesh]]:
+      return issubclass(key, parallelism.Mesh)
+
+    for key, spmd_mesh in spmd_mesh_updates.items():
+      if _is_tag(key):
+        for mesh in selectors.select(model_config, tag=key):
+          mesh.spmd_mesh = spmd_mesh
+      elif _is_mesh(key):
+        for mesh in selectors.select(model_config, key):
+          mesh.spmd_mesh = spmd_mesh
+
+    # Update array_partitions via selectors of tags or mesh subclasses.
+    for key, partition in array_partitions_updates.items():
+      if _is_tag(key):
+        for mesh in selectors.select(model_config, tag=key):
+          mesh.array_partitions = partition
+      elif _is_mesh(key):
+        for mesh in selectors.select(model_config, key):
+          mesh.array_partitions = partition
+
+    # Update field_partitions via selectors of tags or mesh subclasses.
+    for key, partition in field_partitions_updates.items():
+      if _is_tag(key):
+        for mesh in selectors.select(model_config, tag=key):
+          mesh.field_partitions = partition
+      elif _is_mesh(key):
+        for mesh in selectors.select(model_config, key):
+          mesh.field_partitions = partition
+
+    return fdl.build(model_config)
+
+  @classmethod
   def from_checkpoint(
       cls,
       path: str | epath.PathLike,
       checkpointer: ocp.Checkpointer | None = None,
+      spmd_mesh_updates: (
+          dict[TagOrMeshType, jax.sharding.Mesh | None] | None
+      ) = None,
+      array_partitions_updates: (
+          dict[TagOrMeshType, parallelism.ArrayPartitions] | None
+      ) = None,
+      field_partitions_updates: (
+          dict[TagOrMeshType, parallelism.FieldPartitions] | None
+      ) = None,
   ) -> tuple[ForecastSystem, nnx.State]:
     checkpoint_args = cls.checkpoint_args('restore')
     if checkpointer is None:
@@ -260,7 +340,12 @@ class ForecastSystem(nnx.Module, abc.ABC):
       cfg = metadata['fiddle_config']
       # Note: nnx.eval_shape doesn't seem to work here because numerics
       # components might need to make use of init values beyond shape.
-      model = fdl.build(cfg)
+      model = cls.from_fiddle_config(
+          cfg,
+          spmd_mesh_updates=spmd_mesh_updates,
+          array_partitions_updates=array_partitions_updates,
+          field_partitions_updates=field_partitions_updates,
+      )
       assert isinstance(model, ForecastSystem)  # make pytype happy.
       model.update_metadata('fiddle_config', cfg)
       params_structure = nnx.state(model, nnx.Variable)

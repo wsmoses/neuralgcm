@@ -32,6 +32,9 @@ AxisPartition = str | tuple[str, ...] | None
 ArrayPartition = tuple[AxisPartition, ...]
 DimPartitions = dict[DimensionName, AxisPartition]
 
+ArrayPartitions = dict[Schema, ArrayPartition]
+FieldPartitions = dict[Schema, DimPartitions]
+
 # Axis partitions specify how to partition a single dimension of an array, which
 # can be either a single axis along the device mesh, specified as a `str`,
 # a `tuple[str, ...]` if the axis is partitioned acorss multiple device axes
@@ -64,9 +67,10 @@ def partition_spec_for_field(
 
 # TODO(dkochkov): drop array_partitions specification when partitions can be
 # specified using field_partitions.
+# TODO(dkochkov): consider making Mesh not an nnx.Module.
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass(frozen=True)
 class Mesh(nnx.Module):
   """Holds the device mesh and array/field partitioning strategies.
 

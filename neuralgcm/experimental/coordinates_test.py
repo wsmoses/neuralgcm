@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import collections
 from typing import Callable
 
 from absl.testing import absltest
@@ -84,6 +85,39 @@ class CoordinatesTest(parameterized.TestCase):
           expected_shape=(7, 5, 4, 64, 32),
           expected_field_transform=lambda f: f.untag('batch').tag('batch'),
       ),
+      dict(
+          testcase_name='coordinate_shard_none',
+          coords=coordinates.CoordinateShard(
+              coordinate=coordinates.LonLatGrid.T42(),
+              spmd_mesh_shape=collections.OrderedDict(x=2, y=1, z=2),
+              dimension_partitions={'longitude': None, 'latitude': None}
+          ),
+          expected_dims=('longitude', 'latitude'),
+          expected_shape=(128, 64),  # unchanged.
+          supports_xarray_roundtrip=False,
+      ),
+      dict(
+          testcase_name='coordinate_shard_longitude',
+          coords=coordinates.CoordinateShard(
+              coordinate=coordinates.LonLatGrid.T42(),
+              spmd_mesh_shape=collections.OrderedDict(x=2, y=1, z=2),
+              dimension_partitions={'longitude': ('x', 'z'), 'latitude': None}
+          ),
+          expected_dims=('longitude', 'latitude'),
+          expected_shape=(32, 64),  # unchanged.
+          supports_xarray_roundtrip=False,
+      ),
+      dict(
+          testcase_name='coordinate_shard_longitude_and_latitude',
+          coords=coordinates.CoordinateShard(
+              coordinate=coordinates.LonLatGrid.T42(),
+              spmd_mesh_shape=collections.OrderedDict(x=2, y=4, z=2),
+              dimension_partitions={'longitude': 'x', 'latitude': ('y', 'z')}
+          ),
+          expected_dims=('longitude', 'latitude'),
+          expected_shape=(64, 8),  # unchanged.
+          supports_xarray_roundtrip=False,
+      ),
   )
   def test_coordinates(
       self,
@@ -91,6 +125,7 @@ class CoordinatesTest(parameterized.TestCase):
       expected_dims: tuple[str, ...],
       expected_shape: tuple[int, ...],
       expected_field_transform: Callable[[cx.Field], cx.Field] = lambda x: x,
+      supports_xarray_roundtrip: bool = True,
   ):
     """Tests that coordinates are pytrees and have expected shape and dims."""
     with self.subTest('pytree_roundtrip'):
@@ -104,12 +139,13 @@ class CoordinatesTest(parameterized.TestCase):
     with self.subTest('shape'):
       self.assertEqual(coords.shape, expected_shape)
 
-    with self.subTest('xarray_roundtrip'):
-      field = cx.wrap(np.zeros(coords.shape), coords)
-      data_array = field.to_xarray()
-      reconstructed = coordinates.field_from_xarray(data_array)
-      expected = expected_field_transform(field)
-      coordax_testing.assert_fields_equal(reconstructed, expected)
+    if supports_xarray_roundtrip:
+      with self.subTest('xarray_roundtrip'):
+        field = cx.wrap(np.zeros(coords.shape), coords)
+        data_array = field.to_xarray()
+        reconstructed = coordinates.field_from_xarray(data_array)
+        expected = expected_field_transform(field)
+        coordax_testing.assert_fields_equal(reconstructed, expected)
 
 
 if __name__ == '__main__':

@@ -99,6 +99,7 @@ def swap_time_to_timedelta(ds: xarray.Dataset) -> xarray.Dataset:
 
 def xarray_to_timed_fields(
     ds: xarray.Dataset,
+    additional_coord_types: tuple[cx.Coordinate, ...] = (),
 ) -> dict[str, data_specs.TimedField[cx.Field]]:
   """Converts an xarray dataset to TimedField objects.
 
@@ -106,6 +107,8 @@ def xarray_to_timed_fields(
 
   Args:
     ds: dataset to convert.
+    additional_coord_types: additional coordinate types to use when inferring
+      coordinates from the dataset.
 
   Returns:
     A dictionary mapping variable names, excluding 'time', to TimedField
@@ -118,7 +121,9 @@ def xarray_to_timed_fields(
     time = ds.coords['time']
   time = jdt.to_datetime(time.data)
   return {
-      k: data_specs.TimedField(coordinates.field_from_xarray(v), time)
+      k: data_specs.TimedField(
+          coordinates.field_from_xarray(v, additional_coord_types), time
+      )
       for k, v in variables.items()
   }
 

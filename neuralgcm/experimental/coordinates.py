@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import collections
 import dataclasses
 import math
 from typing import Any, Iterable, Self
@@ -145,6 +146,9 @@ class LonLatGrid(cx.Coordinate):
   )
   longitude_wavenumbers: int = dataclasses.field(default=0, kw_only=True)
   total_wavenumbers: int = dataclasses.field(default=0, kw_only=True)
+  spmd_mesh: jax.sharding.Mesh | None = dataclasses.field(
+      default=None, kw_only=True
+  )
   _ylm_grid: spherical_harmonic.Grid = dataclasses.field(
       init=False, repr=False, compare=False
   )
@@ -159,6 +163,7 @@ class LonLatGrid(cx.Coordinate):
         longitude_offset=self.longitude_offset,
         radius=self.radius,
         spherical_harmonics_impl=self.spherical_harmonics_impl,
+        spmd_mesh=self.spmd_mesh,
     )
     object.__setattr__(self, '_ylm_grid', ylm_grid)
 
@@ -205,6 +210,7 @@ class LonLatGrid(cx.Coordinate):
         longitude_nodes=self.longitude_nodes,
         latitude_nodes=self.latitude_nodes,
         latitude_spacing=self.latitude_spacing,
+        spmd_mesh=self.spmd_mesh,
     )
 
   @classmethod
@@ -221,6 +227,7 @@ class LonLatGrid(cx.Coordinate):
         total_wavenumbers=ylm_grid.total_wavenumbers,
         longitude_wavenumbers=ylm_grid.longitude_wavenumbers,
         spherical_harmonics_impl=ylm_grid.spherical_harmonics_impl,
+        spmd_mesh=ylm_grid.spmd_mesh,
     )
 
   @classmethod
@@ -232,6 +239,7 @@ class LonLatGrid(cx.Coordinate):
       longitude_offset: float = 0.0,
       radius: float = 1.0,
       spherical_harmonics_impl: SphericalHarmonicsImpl = FastSphericalHarmonics,
+      spmd_mesh: jax.sharding.Mesh | None = None,
   ) -> LonLatGrid:
     """Constructs a `LonLatGrid` compatible with max_wavenumber and nodes.
 
@@ -245,6 +253,8 @@ class LonLatGrid(cx.Coordinate):
       radius: radius of the sphere.
       spherical_harmonics_impl: class providing an implementation of spherical
         harmonics.
+      spmd_mesh: optional SPMD mesh that informps how the grid is padded to have
+        equal number of elements in each shard.
 
     Returns:
       Constructed LonLatGrid object.
@@ -258,6 +268,7 @@ class LonLatGrid(cx.Coordinate):
         longitude_offset=longitude_offset,
         spherical_harmonics_impl=spherical_harmonics_impl,
         radius=radius,
+        spmd_mesh=spmd_mesh,
     )
     return cls.from_dinosaur_grid(ylm_grid=ylm_grid)
 
@@ -366,6 +377,11 @@ class LonLatGrid(cx.Coordinate):
     return cls.construct(max_wavenumber=1279, gaussian_nodes=640, **kwargs)
 
   def to_xarray(self) -> dict[str, xarray.Variable]:
+    if self.spmd_mesh is not None:
+      raise ValueError(
+          'Conversion of LonLatGrid with SPMD mesh to xarray.DataArray is not'
+          ' supported.'
+      )
     variables = super().to_xarray()
     metadata = dict(
         total_wavenumbers=self.total_wavenumbers,
@@ -461,6 +477,9 @@ class SphericalHarmonicGrid(cx.Coordinate):
   latitude_spacing: str = dataclasses.field(
       default='gauss', repr=False, kw_only=True
   )
+  spmd_mesh: jax.sharding.Mesh | None = dataclasses.field(
+      default=None, kw_only=True
+  )
   _ylm_grid: spherical_harmonic.Grid = dataclasses.field(
       init=False, repr=False, compare=False
   )
@@ -475,6 +494,7 @@ class SphericalHarmonicGrid(cx.Coordinate):
         longitude_nodes=self.longitude_nodes,
         latitude_nodes=self.latitude_nodes,
         latitude_spacing=self.latitude_spacing,
+        spmd_mesh=self.spmd_mesh,
     )
     object.__setattr__(self, '_ylm_grid', ylm_grid)
 
@@ -519,6 +539,7 @@ class SphericalHarmonicGrid(cx.Coordinate):
         spherical_harmonics_impl=self.spherical_harmonics_impl,
         longitude_wavenumbers=self.longitude_wavenumbers,
         total_wavenumbers=self.total_wavenumbers,
+        spmd_mesh=self.spmd_mesh,
     )
 
   @classmethod
@@ -535,6 +556,7 @@ class SphericalHarmonicGrid(cx.Coordinate):
         longitude_nodes=ylm_grid.longitude_nodes,
         latitude_nodes=ylm_grid.latitude_nodes,
         latitude_spacing=ylm_grid.latitude_spacing,
+        spmd_mesh=ylm_grid.spmd_mesh,
     )
 
   @classmethod
@@ -548,6 +570,7 @@ class SphericalHarmonicGrid(cx.Coordinate):
           FastSphericalHarmonics
       ),
       radius: float = 1.0,
+      spmd_mesh: jax.sharding.Mesh | None = None,
   ) -> SphericalHarmonicGrid:
     """Constructs a `SphericalHarmonicGrid` by specifying only wavenumbers."""
     # The number of nodes is chosen for de-aliasing.
@@ -563,6 +586,7 @@ class SphericalHarmonicGrid(cx.Coordinate):
         longitude_offset=longitude_offset,
         spherical_harmonics_impl=spherical_harmonics_impl,
         radius=radius,
+        spmd_mesh=spmd_mesh,
     )
     return cls.from_dinosaur_grid(ylm_grid=ylm_grid)
 
@@ -577,6 +601,7 @@ class SphericalHarmonicGrid(cx.Coordinate):
       spherical_harmonics_impl: SphericalHarmonicsImpl = (
           FastSphericalHarmonics
       ),
+      spmd_mesh: jax.sharding.Mesh | None = None,
   ) -> SphericalHarmonicGrid:
     """Constructs a `SphericalHarmonicGrid` with max_wavenumber.
 
@@ -590,6 +615,7 @@ class SphericalHarmonicGrid(cx.Coordinate):
       radius: radius of the sphere.
       spherical_harmonics_impl: class providing an implementation of spherical
         harmonics.
+      spmd_mesh: optional mesh to use for SPMD sharding.
 
     Returns:
       Constructed SphericalHarmonicGrid object.
@@ -603,6 +629,7 @@ class SphericalHarmonicGrid(cx.Coordinate):
         longitude_offset=longitude_offset,
         spherical_harmonics_impl=spherical_harmonics_impl,
         radius=radius,
+        spmd_mesh=spmd_mesh,
     )
     return cls.from_dinosaur_grid(ylm_grid=ylm_grid)
 
@@ -711,6 +738,11 @@ class SphericalHarmonicGrid(cx.Coordinate):
     return cls.construct(max_wavenumber=1279, gaussian_nodes=640, **kwargs)
 
   def to_xarray(self) -> dict[str, xarray.Variable]:
+    if self.spmd_mesh is not None:
+      raise ValueError(
+          'Conversion of SphericalHarmonicGrid with SPMD mesh to'
+          ' xarray.DataArray is not supported.'
+      )
     variables = super().to_xarray()
     metadata = dict(
         longitude_offset=self.longitude_offset,
@@ -1143,13 +1175,73 @@ class DinosaurCoordinates(cx.CartesianProduct):
     return cls(horizontal=horizontal, vertical=vertical)
 
 
+@jax.tree_util.register_static
+@dataclasses.dataclass(frozen=True)
+class CoordinateShard(cx.Coordinate):
+  """Coordinate that represents a shard of a full coordinate system.
+
+  This class helps tag array shards that represent a subset of values of a
+  `full_coordinare`. The most common use case is during data ingestion where
+  shards are read from disk and are not yet converted to a sharded array.
+  """
+
+  coordinate: cx.Coordinate
+  spmd_mesh_shape: collections.OrderedDict[str, int]
+  dimension_partitions: dict[str, None | str | tuple[str, ...]]
+
+  def __hash__(self):
+    """Hash implementation that avoids un-hashable mesh and partitions attrs."""
+    spmd_mesh_tuple = tuple(self.spmd_mesh_shape.items())
+    partitions_tuple = tuple(self.dimension_partitions.items())
+    return hash((self.coordinate, spmd_mesh_tuple, partitions_tuple))
+
+  def __eq__(self, other):
+    return (
+        isinstance(other, CoordinateShard)
+        and self.coordinate == other.coordinate
+        and self.spmd_mesh_shape == other.spmd_mesh_shape
+        and self.dimension_partitions == other.dimension_partitions
+    )
+
+  @property
+  def dims(self) -> tuple[str, ...]:
+    return self.coordinate.dims  # sharding only affects the shape.
+
+  @property
+  def shape(self) -> tuple[int, ...]:
+    """Shape of the coordinate."""
+    dims, full_shape = self.dims, self.coordinate.shape
+    shard_shape = []
+    for dim, full_size in zip(dims, full_shape, strict=True):
+      axes = self.dimension_partitions.get(dim, None)
+      if not isinstance(axes, tuple):
+        axes = (axes,)
+      n_shards = math.prod(self.spmd_mesh_shape.get(axis, 1) for axis in axes)
+      size, reminder = divmod(full_size, n_shards)
+      if reminder:
+        raise ValueError(
+            f'Dimension {dim} has size {full_size} which is not divisible by'
+            f' the number of shards {n_shards}.'
+        )
+      shard_shape.append(size)
+    return tuple(shard_shape)
+
+  @property
+  def fields(self) -> dict[str, cx.Field]:
+    """A maps from field names to their values."""
+    return {}
+
+
 #
 # Helper functions.
 #
 # TODO(dkochkov) Refactor/remove helpers below to coordax.coords.
 
 
-def field_from_xarray(data_array: xarray.DataArray) -> cx.Field:
+def field_from_xarray(
+    data_array: xarray.DataArray,
+    additional_coord_types: tuple[cx.Coordinate, ...] = (),
+) -> cx.Field:
   """Converts an xarray.DataArray to a Field using NeuralGCM coordinates."""
   # TODO(shoyer): add DinosaurCoordinates into this list?
   coord_types = (
@@ -1161,7 +1253,7 @@ def field_from_xarray(data_array: xarray.DataArray) -> cx.Field:
       LayerLevels,
       cx.DummyAxis,
   )
-  return cx.Field.from_xarray(data_array, coord_types)
+  return cx.Field.from_xarray(data_array, coord_types + additional_coord_types)
 
 
 def consistent_coords(*inputs) -> cx.Coordinate:

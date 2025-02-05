@@ -19,6 +19,7 @@ import chex
 from flax import nnx
 import jax
 from neuralgcm.experimental import coordinates
+from neuralgcm.experimental import parallelism
 from neuralgcm.experimental import random_processes
 from neuralgcm.experimental import typing
 from neuralgcm.experimental import units
@@ -323,6 +324,7 @@ class GaussianRandomFieldTest(BaseSphericalHarmonicRandomProcessTest):
         correlation_length=correlation_length,
         variance=variance,
         rngs=nnx.Rngs(0),
+        mesh=parallelism.Mesh(None),
     )
     self.check_unconditional_and_trajectory_stats(
         grf,
@@ -369,6 +371,7 @@ class GaussianRandomFieldTest(BaseSphericalHarmonicRandomProcessTest):
         correlation_length_type=correlation_length_type,
         variance_type=variance_type,
         rngs=nnx.Rngs(0),
+        mesh=parallelism.Mesh(None),
     )
     with self.subTest('nnx_state_structure_invariance'):
       self.check_nnx_state_structure_is_invariant(grf, grid)
@@ -407,6 +410,7 @@ class BatchGaussianRandomFieldTest(BaseSphericalHarmonicRandomProcessTest):
         correlation_lengths=correlation_lengths,
         variances=variances,
         rngs=nnx.Rngs(0),
+        mesh=parallelism.Mesh(None),
     )
 
   @parameterized.named_parameters(
@@ -544,6 +548,7 @@ class BatchGaussianRandomFieldTest(BaseSphericalHarmonicRandomProcessTest):
         correlation_length_type=correlation_length_type,
         variance_type=variance_type,
         rngs=nnx.Rngs(0),
+        mesh=parallelism.Mesh(None),
     )
     with self.subTest('nnx_state_structure_invariance'):
       self.check_nnx_state_structure_is_invariant(grf, grid)
@@ -561,6 +566,26 @@ class BatchGaussianRandomFieldTest(BaseSphericalHarmonicRandomProcessTest):
           if x == nnx.Param
       )
       self.assertEqual(actual_count, expected_count)
+
+  def test_init_under_jit(self):
+    """Tests that random process can be initialized under jit."""
+    grid = coordinates.LonLatGrid.T42()
+    @nnx.jit
+    def build_grf():
+      grf = random_processes.BatchGaussianRandomField(
+          grid=grid,
+          dt=self.dt,
+          sim_units=self.sim_units,
+          correlation_times=(1.0, 2.7),
+          correlation_lengths=(0.15, 0.2),
+          variances=(1, 2.1),
+          rngs=nnx.Rngs(0),
+          mesh=parallelism.Mesh(None),
+      )
+      return grf
+
+    grf = build_grf()
+    self.assertEqual(grf.n_fields, 2)
 
 
 if __name__ == '__main__':

@@ -71,7 +71,7 @@ def partition_spec_for_field(
 
 
 @dataclasses.dataclass(frozen=True)
-class Mesh(nnx.Module):
+class Mesh:
   """Holds the device mesh and array/field partitioning strategies.
 
   Attributes:

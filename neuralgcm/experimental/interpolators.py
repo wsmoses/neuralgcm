@@ -69,7 +69,7 @@ class SpectralRegridder:
     input_total_k = field.coord_fields['total_wavenumber'].shape[0]
     target_lon_k = self.target_coords.sizes['longitude_wavenumber']
     target_total_k = self.target_coords.sizes['total_wavenumber']
-    if (input_total_k < target_total_k) and (input_lon_k < target_lon_k):
+    if (input_total_k < target_total_k) and (input_lon_k <= target_lon_k):
       return self.pad_to_target_wavenumbers(field)
     elif (input_total_k >= target_total_k) and (input_lon_k >= target_lon_k):
       return self.truncate_to_target_wavenumbers(field)

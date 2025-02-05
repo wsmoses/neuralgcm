@@ -14,6 +14,7 @@
 
 """Helper functions for converting between different state representations."""
 
+import dataclasses
 import functools
 
 from dinosaur import primitive_equations as dinosaur_primitive_equations
@@ -25,6 +26,7 @@ import jax.numpy as jnp
 from neuralgcm.experimental import coordinates
 from neuralgcm.experimental import equations
 from neuralgcm.experimental import orographies
+from neuralgcm.experimental import parallelism
 from neuralgcm.experimental import typing
 from neuralgcm.experimental import units
 
@@ -70,6 +72,7 @@ def primitive_equations_to_uvtz(
     orography: orographies.Orography,
     target_coords: coordinates.DinosaurCoordinates,
     sim_units: units.SimUnits,
+    mesh: parallelism.Mesh,
 ):
   """Converts primitive equations state to pressure level representation.
 
@@ -85,14 +88,23 @@ def primitive_equations_to_uvtz(
     orography: Orography module.
     target_coords: Pressure-level dinosaur coordinates to convert to.
     sim_units: Simulation units object.
+    mesh: Mesh that is compatible with 'dycore' and 'physics'
+      sharding strategies described in parallelism.with_dycore_sharding and
+      parallelism.with_physics_sharding. If the underlying mesh does not set
+      device mesh then no sharding is applied. If None, a default non-sharding
+      mesh is used.
 
   Returns:
     Dictionary of state components interpolated to target_coords.
   """
-  to_nodal_fn = input_coords.horizontal.ylm_grid.to_nodal
+  input_ylm_grid = input_coords.horizontal.ylm_grid
+  input_ylm_grid = dataclasses.replace(
+      input_ylm_grid, spmd_mesh=mesh.spmd_mesh
+  )
+  to_nodal_fn = input_ylm_grid.to_nodal
   velocity_fn = functools.partial(
       spherical_harmonic.vor_div_to_uv_nodal,
-      input_coords.horizontal.ylm_grid,
+      input_ylm_grid,
   )
   u, v = velocity_fn(  # returned in nodal space.
       vorticity=source_state.vorticity, divergence=source_state.divergence
@@ -113,11 +125,11 @@ def primitive_equations_to_uvtz(
       water_vapor_gas_constant=sim_units.water_vapor_gas_constant,
   )
   surface_pressure = jnp.exp(to_nodal_fn(source_state.log_surface_pressure))
-  # u, v, t, z, tracers, surface_pressure = (
-  #     self.coords.dycore_to_physics_sharding(
-  #         (u, v, t, z, tracers, surface_pressure)
-  #     )
-  # )
+  u, v, t, z, tracers, surface_pressure = (
+      parallelism.with_dycore_to_physics_sharding(
+          mesh, (u, v, t, z, tracers, surface_pressure)
+      )
+  )
   interpolate_with_linear_extrap_fn = (
       vertical_interpolation.vectorize_vertical_interpolation(
           vertical_interpolation.linear_interp_with_linear_extrap

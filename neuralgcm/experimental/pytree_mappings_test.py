@@ -1,11 +1,11 @@
 # Copyright 2024 Google LLC
-
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
-
+#
 #     https://www.apache.org/licenses/LICENSE-2.0
-
+#
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -22,6 +22,7 @@ import chex
 from flax import nnx
 import jax
 from neuralgcm.experimental import coordinates
+from neuralgcm.experimental import parallelism
 from neuralgcm.experimental import pytree_mappings
 from neuralgcm.experimental import pytree_transforms
 from neuralgcm.experimental import pytree_utils
@@ -72,6 +73,7 @@ class EmbeddingsTest(parameterized.TestCase):
         feature_module=feature_module,
         mapping_factory=mapping_factory,
         rngs=nnx.Rngs(0),
+        mesh=parallelism.Mesh(None),
     )
     test_inputs = {k: np.ones(coords.shape) for k in input_names}
     self._test_embedding_module(embedding, test_inputs)
@@ -100,6 +102,7 @@ class EmbeddingsTest(parameterized.TestCase):
         pytree_mappings.Embedding,
         feature_module=feature_module,
         mapping_factory=mapping_factory,
+        mesh=parallelism.Mesh(None),
     )
     volume_field_names = ('u', 'div')
     surface_field_names = ('pressure',)
@@ -109,6 +112,7 @@ class EmbeddingsTest(parameterized.TestCase):
         volume_field_names=volume_field_names,
         embedding_factory=embedding_factory,
         rngs=nnx.Rngs(0),
+        mesh=parallelism.Mesh(None),
     )
     test_inputs = {k: np.ones(coords.shape) for k in input_names}
     out = state_mapping(test_inputs)

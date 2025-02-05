@@ -23,6 +23,7 @@ import jax
 import jax.numpy as jnp
 from neuralgcm.experimental import coordax as cx
 from neuralgcm.experimental import coordinates
+from neuralgcm.experimental import parallelism
 from neuralgcm.experimental import typing
 from neuralgcm.experimental import units
 import numpy as np
@@ -183,6 +184,8 @@ class GaussianRandomFieldCore(nnx.Module):
       correlation_length_type: nnx.Param | RandomnessParam = RandomnessParam,
       variance_type: nnx.Param | RandomnessParam = RandomnessParam,
       clip: float = 6.0,
+      *,
+      mesh: parallelism.Mesh,
   ):
     """Constructs a core of a Gaussian Random Field.
 
@@ -201,6 +204,7 @@ class GaussianRandomFieldCore(nnx.Module):
         selection of the subsets of model parameters.
       clip: number of standard deviations at which to clip randomness to ensure
         numerical stability.
+      mesh: mesh to use for sharding.
     """
     nondimensionalize = lambda x: units.maybe_nondimensionalize(x, sim_units)
     correlation_time = nondimensionalize(correlation_time)
@@ -214,6 +218,7 @@ class GaussianRandomFieldCore(nnx.Module):
     self.corr_length = as_1d_param(correlation_length, correlation_length_type)
     self._variance = as_1d_param(variance, variance_type)
     self.clip = clip
+    self.mesh = mesh
 
   @property
   def _surf_area(self) -> jax.Array | float:
@@ -261,13 +266,16 @@ class GaussianRandomFieldCore(nnx.Module):
   def _sigma_array(self) -> jax.Array:
     """Array of σₙ from Appendix 8 in [Palmer] http://shortn/_56HCcQwmSS."""
     dinosaur_grid = self.grid.ylm_grid
+    dinosaur_grid = dataclasses.replace(
+        dinosaur_grid, spmd_mesh=self.mesh.spmd_mesh
+    )
     # n = [0, 1, ..., N]
     n = dinosaur_grid.modal_axes[1]  # total wavenumbers.
     # Number of longitudinal wavenumbers at each total wavenumber n.
     #  L = 2n + 1, except for the last entry.
     n_longitudian_wavenumbers = dinosaur_grid.mask.sum(axis=0)
     # [Palmer] states correlation_length = sqrt(2κT) / R, therefore
-    kt = 0.5 * self.relative_corr_len ** 2
+    kt = 0.5 * self.relative_corr_len**2
     # sigmas_unnormed[n] is proportional to the standard deviation for each
     # longitudinal wavenumbers at each total wavenumber n.
     sigmas_unnormed = jnp.exp(-0.5 * kt * n * (n + 1))
@@ -292,6 +300,9 @@ class GaussianRandomFieldCore(nnx.Module):
   def sample_core(self, rng: typing.PRNGKeyArray) -> jax.Array:
     """Helper method for sampling the core of the gaussian random field."""
     dinosaur_grid = self.grid.ylm_grid
+    dinosaur_grid = dataclasses.replace(
+        dinosaur_grid, spmd_mesh=self.mesh.spmd_mesh
+    )
     modal_shape = dinosaur_grid.modal_shape
     sigmas = self._sigma_array()
     weights = jnp.where(
@@ -331,6 +342,7 @@ class GaussianRandomField(RandomProcessModule):
       variance_type: nnx.Param | RandomnessParam = RandomnessParam,
       clip: float = 6.0,
       *,
+      mesh: parallelism.Mesh,
       rngs: nnx.Rngs,
   ):
     """Initializes a Gaussian Random Field."""
@@ -345,11 +357,12 @@ class GaussianRandomField(RandomProcessModule):
         correlation_length_type=correlation_length_type,
         variance_type=variance_type,
         clip=clip,
+        mesh=mesh,
     )
     # rngs are used to create an initial state. This ensures that the structure
     # of the module is not changed by sampling or advancing the state.
-    prng_key = rngs.params()._base_array
-    core_rngs = rngs.params()._base_array
+    prng_key = rngs.params()
+    core_rngs = rngs.params()
     self.randomness_state = RandomnessValue(
         typing.Randomness(
             prng_key=prng_key,
@@ -357,6 +370,7 @@ class GaussianRandomField(RandomProcessModule):
             core=self.grf.sample_core(core_rngs),
         )
     )
+    self.mesh = mesh
 
   def unconditional_sample(self, rng: typing.PRNGKeyArray) -> typing.Randomness:
     """Returns a randomly initialized state for the autoregressive process."""
@@ -395,6 +409,9 @@ class GaussianRandomField(RandomProcessModule):
     if state is None:
       state = self.randomness_state.value
     dinosaur_grid = self.grf.grid.ylm_grid
+    dinosaur_grid = dataclasses.replace(
+        dinosaur_grid, spmd_mesh=self.mesh.spmd_mesh
+    )
     return cx.wrap(dinosaur_grid.to_nodal(state.core), coords)
 
 
@@ -414,6 +431,7 @@ class BatchGaussianRandomField(RandomProcessModule):
       variance_type: nnx.Param | RandomnessParam = RandomnessParam,
       clip: float = 6.0,
       *,
+      mesh: parallelism.Mesh,
       rngs: nnx.Rngs,
   ):
     lengths = [
@@ -446,13 +464,14 @@ class BatchGaussianRandomField(RandomProcessModule):
         correlation_length_type=correlation_length_type,
         variance_type=variance_type,
         clip=clip,
+        mesh=mesh,
     )
     self.n_fields = n_fields
     self.batch_grf_core = nnx.vmap(make_grf, axis_size=self.n_fields)(
         correlation_lengths, correlation_times, variances
     )
-    prng_key = rngs.params()._base_array
-    core_rngs = jax.random.split(rngs.params()._base_array, num=self.n_fields)
+    prng_key = rngs.params()
+    core_rngs = jax.random.split(rngs.params(), num=self.n_fields)
     sample_fn = lambda grf, rng: grf.sample_core(rng)
     self.randomness_state = RandomnessValue(
         typing.Randomness(
@@ -461,6 +480,7 @@ class BatchGaussianRandomField(RandomProcessModule):
             core=nnx.vmap(sample_fn)(self.batch_grf_core, core_rngs),
         )
     )
+    self.mesh = mesh
 
   @property
   def event_shape(self) -> tuple[int, ...]:
@@ -508,6 +528,9 @@ class BatchGaussianRandomField(RandomProcessModule):
     if state is None:
       state = self.randomness_state.value
     dinosaur_grid = self.batch_grf_core.grid.ylm_grid
+    dinosaur_grid = dataclasses.replace(
+        dinosaur_grid, spmd_mesh=self.mesh.spmd_mesh
+    )
     # TODO(dkochkov): consider an option where we return a field with only
     # trailing axes labeled, rather than assigning names to all dimensions.
     return cx.wrap(dinosaur_grid.to_nodal(state.core), 'grf', coords)

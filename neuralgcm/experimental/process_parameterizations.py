@@ -1,11 +1,11 @@
 # Copyright 2024 Google LLC
-
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
-
+#
 #     https://www.apache.org/licenses/LICENSE-2.0
-
+#
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -18,6 +18,7 @@ from typing import Callable
 
 from flax import nnx
 from neuralgcm.experimental import coordinates
+from neuralgcm.experimental import parallelism
 from neuralgcm.experimental import pytree_mappings
 from neuralgcm.experimental import pytree_transforms
 from neuralgcm.experimental import pytree_utils
@@ -47,6 +48,7 @@ class ModalNeuralDivCurlParameterization(nnx.Module):
       input_state_shapes: typing.Pytree | None = None,
       u_key: str = 'u_component_of_wind',
       v_key: str = 'v_component_of_wind',
+      mesh: parallelism.Mesh,
       rngs: nnx.Rngs,
   ):
     output_shapes = {}
@@ -72,21 +74,26 @@ class ModalNeuralDivCurlParameterization(nnx.Module):
         output_shapes=output_shapes,
         rngs=rngs,
     )
+    self.mesh = mesh
     self.features_module = features_module
     self.tendency_transform = tendency_transform
-    self.to_div_curl = pytree_transforms.ToModalWithDivCurl(coords.horizontal)
+    self.to_div_curl = pytree_transforms.ToModalWithDivCurl(
+        coords.horizontal, mesh=mesh
+    )
     self.filter = modal_filter
 
   def __call__(
       self, inputs: typing.PyTreeState, time: jdt.Datetime
   ) -> typing.PyTreeState:
-    # inputs = self.coords.with_dycore_sharding(inputs)
+    inputs = parallelism.with_dycore_sharding(self.mesh, inputs)
     # TODO(shoyer): always take a dict instead of a pytree?
     inputs_dict, from_dict_fn = pytree_utils.as_dict(inputs)
     features = self.features_module(inputs_dict | {'time': time})
-    # features = self.coords.dycore_to_physics_sharding(features)
+    features = parallelism.with_dycore_to_physics_sharding(self.mesh, features)
     tendencies = self.parameterization_mapping(features)
-    # tendencies = self.coords.physics_to_dycore_sharding(tendencies)
+    tendencies = parallelism.with_physics_to_dycore_sharding(
+        self.mesh, tendencies
+    )
     tendencies = self.tendency_transform(tendencies)
     modal_tendencies = self.to_div_curl(tendencies)
     modal_tendencies = self.filter.filter_modal(modal_tendencies)
@@ -94,5 +101,5 @@ class ModalNeuralDivCurlParameterization(nnx.Module):
         inputs_dict, modal_tendencies, default=0.0
     )
     outputs = from_dict_fn(modal_tendencies)
-    # outputs = self.coords.with_dycore_sharding(outputs)
+    outputs = parallelism.with_dycore_sharding(self.mesh, outputs)
     return outputs

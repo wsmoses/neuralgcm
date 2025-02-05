@@ -28,7 +28,6 @@ from dinosaur import vertical_interpolation
 import jax
 import jax.numpy as jnp
 from neuralgcm.experimental import coordax as cx
-from neuralgcm.experimental import typing
 import numpy as np
 import xarray
 
@@ -1273,28 +1272,6 @@ def consistent_coords(*inputs) -> cx.Coordinate:
     raise ValueError(f'Found non-unique {coords=} in inputs.')
   (coords,) = coords
   return coords
-
-
-def modal_shape_to_nodal_shape(
-    modal_shape: typing.Pytree,
-    grid: SphericalHarmonicGrid,
-) -> typing.Pytree:
-  """Returns the nodal shape corresponding to the given modal shape."""
-  # Note: here modal_shape is expected to be a pytree with
-  # typing.ShapeDtypeStruct leaves, so that eval_shape works as expected.
-  to_nodal_shape = lambda x: jax.eval_shape(grid.ylm_grid.to_nodal, x)
-  return jax.tree.map(to_nodal_shape, modal_shape)
-
-
-def nodal_shape_to_modal_shape(
-    nodal_shape: typing.Pytree,
-    grid: SphericalHarmonicGrid,
-) -> typing.Pytree:
-  """Returns the modal shape corresponding to the given nodal shape."""
-  # Note: here nodal_shape is expected to be a pytree with
-  # typing.ShapeDtypeStruct leaves, so that eval_shape works as expected.
-  to_modal_shape = lambda x: jax.eval_shape(grid.ylm_grid.to_modal, x)
-  return jax.tree.map(to_modal_shape, nodal_shape)
 
 
 def split_field_attrs(pytree):

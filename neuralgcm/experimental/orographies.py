@@ -1,11 +1,11 @@
 # Copyright 2024 Google LLC
-
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
-
+#
 #     https://www.apache.org/licenses/LICENSE-2.0
-
+#
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -14,10 +14,14 @@
 
 """Modules that hold orographic data."""
 
+import dataclasses
+
 from flax import nnx
+import jax.numpy as jnp
 from neuralgcm.experimental import coordax as cx
 from neuralgcm.experimental import coordinates
 from neuralgcm.experimental import interpolators
+from neuralgcm.experimental import parallelism
 from neuralgcm.experimental import spatial_filters
 from neuralgcm.experimental import typing
 from neuralgcm.experimental import units
@@ -37,20 +41,26 @@ class ModalOrography(nnx.Module):
       *,
       grid: coordinates.SphericalHarmonicGrid,
       initializer: nnx.initializers.Initializer = nnx.initializers.zeros_init(),
+      mesh: parallelism.Mesh,
       rngs: nnx.Rngs,
   ):
     self.grid = grid
-    self.orography = OrographyVariable(
-        initializer(rngs, grid.ylm_grid.modal_shape))
+    self.opt_grid = dataclasses.replace(grid, spmd_mesh=mesh.spmd_mesh)
+    modal_shape_1d = (grid.ylm_grid.mask.sum(),)
+    self.orography = OrographyVariable(initializer(rngs, modal_shape_1d))
 
   @property
   def nodal_orography(self) -> typing.Array:
-    return self.grid.ylm_grid.to_nodal(self.orography.value)
+    padded_modal_orography = self.modal_orography
+    return self.opt_grid.ylm_grid.to_nodal(padded_modal_orography)
 
   @property
   def modal_orography(self) -> typing.Array:
     """Returns orography converted to modal representation with filtering."""
-    return self.orography.value
+    ylm_grid = self.opt_grid.ylm_grid
+    mask = ylm_grid.mask
+    modal_orography_2d = jnp.zeros(ylm_grid.modal_shape)
+    return modal_orography_2d.at[mask].set(self.orography.value)
 
   def update_orography_from_data(
       self,
@@ -83,7 +93,7 @@ class ModalOrography(nnx.Module):
     modal_orography = modal_orography.unwrap(self.grid)
     if isinstance(spatial_filter, spatial_filters.ModalSpatialFilter):
       modal_orography = spatial_filter.filter_modal(modal_orography)
-    self.orography.value = modal_orography
+    self.orography.value = modal_orography[self.grid.ylm_grid.mask]
 
 
 class Orography(nnx.Module):

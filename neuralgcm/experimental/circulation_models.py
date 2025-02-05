@@ -14,6 +14,7 @@
 
 """Modules that implement time evolution of a model state."""
 
+import dataclasses
 from typing import Callable
 
 from dinosaur import coordinate_systems
@@ -21,6 +22,7 @@ from flax import nnx
 
 from neuralgcm.experimental import coordinates
 from neuralgcm.experimental import equations
+from neuralgcm.experimental import parallelism
 from neuralgcm.experimental import spatial_filters
 from neuralgcm.experimental import time_integrators
 from neuralgcm.experimental import typing
@@ -46,6 +48,8 @@ class DycoreWithParameterization(nnx.Module):
       dycore_substeps: int = 1,
       io_coords: coordinates.DinosaurCoordinates | None = None,
       remat_substep: bool = False,
+      *,
+      mesh: parallelism.Mesh,
   ):
     self.internal_coords = internal_coords
     self.dycore_equation = dycore_equation
@@ -57,18 +61,27 @@ class DycoreWithParameterization(nnx.Module):
     self.dycore_substeps = dycore_substeps
     self.dycore_dt = self.inner_dt / dycore_substeps
     self.remat_substep = remat_substep
+    self.mesh = mesh
     if io_coords is None:
       self.io_coords = internal_coords
       self.interpolate_fn = None
       self.reverse_interpolate_fn = None
     else:
       self.io_coords = io_coords
+      io_dinosaur_coords = io_coords.dinosaur_coords
+      io_dinosaur_coords = dataclasses.replace(
+          io_dinosaur_coords, spmd_mesh=self.mesh.spmd_mesh
+      )
+      internal_dinosaur_coords = internal_coords.dinosaur_coords
+      internal_dinosaur_coords = dataclasses.replace(
+          internal_dinosaur_coords, spmd_mesh=self.mesh.spmd_mesh
+      )
       self.interpolate_fn = coordinate_systems.get_spectral_interpolate_fn(
-          io_coords.dinosaur_coords, self.internal_coords.dinosaur_coords
+          io_dinosaur_coords, internal_dinosaur_coords
       )
       self.reverse_interpolate_fn = (
           coordinate_systems.get_spectral_interpolate_fn(
-              self.internal_coords.dinosaur_coords, io_coords.dinosaur_coords
+              internal_dinosaur_coords, io_dinosaur_coords
           )
       )
 
@@ -78,9 +91,9 @@ class DycoreWithParameterization(nnx.Module):
       tendencies: typing.Pytree,
   ) -> typing.Pytree:
     """Computes `prognostics` evolved in time by `self.inner_dt`."""
-    # prognostics, tendencies = self.internal_coords.with_dycore_sharding(
-    #     (prognostics, tendencies)
-    # )
+    prognostics, tendencies = parallelism.with_dycore_sharding(
+        self.mesh, (prognostics, tendencies)
+    )
     parametrization_eq = time_integrators.ExplicitODE.from_functions(
         lambda prognostics: tendencies
     )
@@ -98,11 +111,11 @@ class DycoreWithParameterization(nnx.Module):
     prognostics = time_integrators.maybe_fix_sim_time_roundoff(
         prognostics, self.inner_dt
     )
-    # prognostics = self.internal_coords.with_dycore_sharding(prognostics)
+    prognostics = parallelism.with_dycore_sharding(self.mesh, prognostics)
     return prognostics
 
   def substep(self, prognostics: typing.Pytree):
-    # prognostics = self.internal_coords.with_dycore_sharding(prognostics)
+    prognostics = parallelism.with_dycore_sharding(self.mesh, prognostics)
     pp_tendency = self.parameterization(prognostics)
     if self.interpolate_fn is not None:
       pp_tendency = self.interpolate_fn(pp_tendency)
@@ -112,8 +125,9 @@ class DycoreWithParameterization(nnx.Module):
     )
     if self.reverse_interpolate_fn is not None:
       next_prognostics = self.reverse_interpolate_fn(next_prognostics)
-    # next_prognostics = self.internal_coords.with_dycore_sharding(
-    #     next_prognostics)
+    next_prognostics = parallelism.with_dycore_sharding(
+        self.mesh, next_prognostics
+    )
     return next_prognostics
 
   def __call__(self, prognostics: typing.Pytree) -> typing.Pytree:

@@ -1,11 +1,11 @@
 # Copyright 2024 Google LLC
-
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
-
+#
 #     https://www.apache.org/licenses/LICENSE-2.0
-
+#
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -29,6 +29,7 @@ from neuralgcm.experimental import coordinates
 from neuralgcm.experimental import data_specs
 from neuralgcm.experimental import dynamic_io
 from neuralgcm.experimental import orographies
+from neuralgcm.experimental import parallelism
 from neuralgcm.experimental import pytree_mappings
 from neuralgcm.experimental import pytree_transforms
 from neuralgcm.experimental import pytree_utils
@@ -195,7 +196,9 @@ class StandardPytreeTransformsTest(parameterized.TestCase):
     clip_mask = (np.arange(ls.size) <= (ls.max() - n_clip)).astype(int)
     expected = jax.tree.map(lambda x: x * clip_mask, inputs)
     clip_transform = pytree_transforms.ClipWavenumbers(
-        grid=grid, wavenumbers_to_clip=n_clip
+        grid=grid,
+        wavenumbers_to_clip=n_clip,
+        mesh=parallelism.Mesh(None),
     )
     actual = clip_transform(inputs)
     chex.assert_trees_all_equal(actual, expected)
@@ -297,7 +300,11 @@ class InputsFeaturesTest(parameterized.TestCase):
 
   def test_orography_features(self):
     grid = coordinates.SphericalHarmonicGrid.T21()
-    orography = orographies.ModalOrography(grid=grid, rngs=None)
+    orography = orographies.ModalOrography(
+        grid=grid,
+        rngs=None,
+        mesh=parallelism.Mesh(None),
+    )
     orography_features = pytree_transforms.OrographyFeatures(
         orography_module=orography,
     )
@@ -305,11 +312,17 @@ class InputsFeaturesTest(parameterized.TestCase):
 
   def test_orography_with_grads_features(self):
     grid = coordinates.SphericalHarmonicGrid.T21()
-    orography = orographies.ModalOrography(grid=grid, rngs=None)
+    orography = orographies.ModalOrography(
+        grid=grid,
+        rngs=None,
+        mesh=parallelism.Mesh(None),
+    )
     orography_features = pytree_transforms.OrographyWithGradsFeatures(
         orography_module=orography,
         compute_gradients_transform=pytree_transforms.ToModalWithFilteredGradients(
-            grid, filter_attenuations=[2.0]
+            grid,
+            filter_attenuations=[2.0],
+            mesh=parallelism.Mesh(None),
         ),
     )
     self._test_feature_module(orography_features, None)
@@ -360,20 +373,26 @@ class InputsFeaturesTest(parameterized.TestCase):
         vertical=coordinates.SigmaLevels.equidistant(3),
     )
     with_gradients_transform = pytree_transforms.ToModalWithFilteredGradients(
-        coords.horizontal, filter_attenuations=[2.0]
+        coords.horizontal,
+        filter_attenuations=[2.0],
+        mesh=parallelism.Mesh(None),
     )
     features_grads = pytree_transforms.VelocityAndPrognosticsWithModalGradients(
         coords,
         volume_field_names=(
             'u',
             'v',
+            'vorticity',
         ),
         surface_field_names=('lsp',),
         compute_gradients_transform=with_gradients_transform,
+        mesh=parallelism.Mesh(None),
     )
     inputs = {
         'u': np.ones(coords.dinosaur_coords.modal_shape),
         'v': np.ones(coords.dinosaur_coords.modal_shape),
+        'vorticity': np.ones(coords.dinosaur_coords.modal_shape),
+        'divergence': np.ones(coords.dinosaur_coords.modal_shape),
         'lsp': np.ones(coords.dinosaur_coords.modal_shape[1:])[np.newaxis, ...],
         'tracers': {},
         'time': jdt.to_datetime('2025-01-09T15:00'),
@@ -404,6 +423,7 @@ class InputsFeaturesTest(parameterized.TestCase):
         feature_module=feature_module,
         mapping_factory=mapping_factory,
         rngs=nnx.Rngs(0),
+        mesh=parallelism.Mesh(None),
     )
     surface_embedding_features = pytree_transforms.SurfaceEmbeddingFeatures(
         coords=coords,
@@ -436,6 +456,7 @@ class InputsFeaturesTest(parameterized.TestCase):
         feature_module=feature_module,
         mapping_factory=mapping_factory,
         rngs=nnx.Rngs(0),
+        mesh=parallelism.Mesh(None),
     )
     surface_embedding_features = pytree_transforms.VolumeEmbeddingFeatures(
         coords=coords,
@@ -460,11 +481,13 @@ class InputsFeaturesTest(parameterized.TestCase):
           correlation_length=1.0,
           variance=1.0,
           rngs=nnx.Rngs(0),
+          mesh=parallelism.Mesh(None),
       )
       random_process.unconditional_sample(jax.random.key(0))
       randomness_features = pytree_transforms.RandomnessFeatures(
           random_process=random_process,
           grid=grid,
+          mesh=parallelism.Mesh(None),
       )
       self._test_feature_module(randomness_features, None)
 
@@ -477,11 +500,13 @@ class InputsFeaturesTest(parameterized.TestCase):
           correlation_lengths=[0.6, 0.9],
           variances=[1.0, 1.0],
           rngs=nnx.Rngs(0),
+          mesh=parallelism.Mesh(None),
       )
       random_process.unconditional_sample(jax.random.key(0))
       randomness_features = pytree_transforms.RandomnessFeatures(
           random_process=random_process,
           grid=grid,
+          mesh=parallelism.Mesh(None),
       )
       self._test_feature_module(randomness_features, None)
 
@@ -506,7 +531,9 @@ class InputsFeaturesTest(parameterized.TestCase):
         horizontal=coordinates.SphericalHarmonicGrid.T21(),
         vertical=coordinates.SigmaLevels.equidistant(8),
     )
-    pressure_features = pytree_transforms.PressureFeatures(coords=coords)
+    pressure_features = pytree_transforms.PressureFeatures(
+        coords=coords, mesh=parallelism.Mesh(None)
+    )
     inputs = {
         'log_surface_pressure': np.ones((1,) + coords.horizontal.shape),
     }
@@ -531,21 +558,18 @@ class PrecipitationminusEvaporationTest(parameterized.TestCase):
         tracers={
             'specific_humidity': np.ones(coords.shape),
             'specific_cloud_ice_water_content': np.ones(coords.shape),
-            'specific_cloud_liquid_water_content': np.ones(
-                coords.shape
-            ),
+            'specific_cloud_liquid_water_content': np.ones(coords.shape),
         },
     )
     expected_outputs = (
-        np.ones(coords.horizontal.shape)
-        * 3
-        / sim_units.gravity_acceleration
+        np.ones(coords.horizontal.shape) * 3 / sim_units.gravity_acceleration
     )
 
     pme = pytree_transforms.PrecipitationMinusEvaporation(
         grid=coords.horizontal,
         level=coords.vertical,
         sim_units=sim_units,
+        mesh=parallelism.Mesh(None),
     )
     input_state_modal = coords.horizontal.ylm_grid.to_modal(state)
     inputs_tendency_modal = coords.horizontal.ylm_grid.to_modal(state)
@@ -556,6 +580,7 @@ class PrecipitationminusEvaporationTest(parameterized.TestCase):
 
     with self.subTest('value'):
       np.testing.assert_allclose(outputs, expected_outputs, rtol=1e-5)
+
 
 if __name__ == '__main__':
   jax.config.update('jax_traceback_filtering', 'off')

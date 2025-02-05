@@ -19,13 +19,15 @@ import dataclasses
 from typing import Sequence
 
 from dinosaur import filtering
+from flax import nnx
 from neuralgcm.experimental import coordinates
+from neuralgcm.experimental import parallelism
 from neuralgcm.experimental import typing
 from neuralgcm.experimental import units
 import numpy as np
 
 
-class SpatialFilter(abc.ABC):
+class SpatialFilter(nnx.Module, abc.ABC):
   """Base class for spatial filters."""
 
   def __call__(self, inputs: typing.Pytree) -> typing.Pytree:
@@ -49,18 +51,32 @@ class ExponentialModalFilter(ModalSpatialFilter):
       attenuation: float = 16,
       order: int = 18,
       cutoff: float = 0,
+      *,
+      mesh: parallelism.Mesh,
   ):
     """See ``dinosaur.filtering.exponential_filter`` for details."""
     self.grid = grid
-    self.filter = filtering.exponential_filter(
-        grid.ylm_grid, attenuation, order, cutoff)
+    self.attenuation = attenuation
+    self.order = order
+    self.cutoff = cutoff
+    self.mesh = mesh
 
   def filter_modal(self, inputs: typing.Pytree) -> typing.Pytree:
-    return self.filter(inputs)
+    ylm_grid = self.grid.ylm_grid
+    ylm_grid = dataclasses.replace(ylm_grid, spmd_mesh=self.mesh.spmd_mesh)
+    filter_fn = filtering.exponential_filter(
+        ylm_grid, self.attenuation, self.order, self.cutoff
+    )
+    return filter_fn(inputs)
 
   def __call__(self, inputs: typing.Pytree) -> typing.Pytree:
     dinosaur_grid = self.grid.ylm_grid
-    return dinosaur_grid.to_nodal(self.filter(dinosaur_grid.to_modal(inputs)))
+    dinosaur_grid = dataclasses.replace(
+        dinosaur_grid, spmd_mesh=self.mesh.spmd_mesh
+    )
+    return dinosaur_grid.to_nodal(
+        self.filter_modal(dinosaur_grid.to_modal(inputs))
+    )
 
   @classmethod
   def from_timescale(
@@ -71,6 +87,7 @@ class ExponentialModalFilter(ModalSpatialFilter):
       order: int = 18,
       cutoff: float = 0,
       *,
+      mesh: parallelism.Mesh,
       sim_units: units.SimUnits,
   ):
     """Returns a filter with the given timescale."""
@@ -82,7 +99,13 @@ class ExponentialModalFilter(ModalSpatialFilter):
       timescale = units.nondimensionalize_timedelta64(timescale, sim_units)
     else:
       timescale = units.maybe_nondimensionalize(timescale, sim_units)
-    return cls(grid, attenuation=(dt / timescale), order=order, cutoff=cutoff)
+    return cls(
+        grid,
+        attenuation=(dt / timescale),
+        order=order,
+        cutoff=cutoff,
+        mesh=mesh,
+    )
 
 
 @dataclasses.dataclass
@@ -91,6 +114,7 @@ class SequentialModalFilter(ModalSpatialFilter):
 
   filters: Sequence[ModalSpatialFilter]
   grid: coordinates.SphericalHarmonicGrid | coordinates.LonLatGrid
+  mesh: parallelism.Mesh
 
   def filter_modal(self, inputs: typing.Pytree) -> typing.Pytree:
     for modal_filter in self.filters:
@@ -99,6 +123,9 @@ class SequentialModalFilter(ModalSpatialFilter):
 
   def __call__(self, inputs: typing.Pytree) -> typing.Pytree:
     dinosaur_grid = self.grid.ylm_grid
+    dinosaur_grid = dataclasses.replace(
+        dinosaur_grid, spmd_mesh=self.mesh.spmd_mesh
+    )
     modal_inputs = dinosaur_grid.to_modal(inputs)
     modal_outputs = self.filter_modal(modal_inputs)
     return dinosaur_grid.to_nodal(modal_outputs)

@@ -1,11 +1,11 @@
 # Copyright 2024 Google LLC
-
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
-
+#
 #     https://www.apache.org/licenses/LICENSE-2.0
-
+#
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -19,6 +19,7 @@ from typing import Callable, Protocol, Sequence
 from flax import nnx
 import jax
 from neuralgcm.experimental import coordinates
+from neuralgcm.experimental import parallelism
 from neuralgcm.experimental import pytree_transforms
 from neuralgcm.experimental import pytree_utils
 from neuralgcm.experimental import towers
@@ -201,6 +202,7 @@ class Embedding(nnx.Module):
       transform: pytree_transforms.Transform = pytree_transforms.Identity(),
       input_state_shapes: typing.Pytree | None = None,
       *,
+      mesh: parallelism.Mesh,
       rngs: nnx.Rngs,
   ):
     if input_state_shapes is None:
@@ -212,17 +214,16 @@ class Embedding(nnx.Module):
         rngs=rngs,
     )
     self.transform = transform
+    self.mesh = mesh
 
   def __call__(self, inputs: typing.Pytree):
-    # TODO(dkochkov): Figure out if we need to support sharding here, it would
-    # require passing coords object as they are holding sharding information.
-    # inputs = self.coords.with_dycore_sharding(inputs)
+    inputs = parallelism.with_dycore_sharding(self.mesh, inputs)
     features = self.feature_module(inputs)
-    # features = self.coords.dycore_to_physics_sharding(features)
+    features = parallelism.with_dycore_to_physics_sharding(self.mesh, features)
     outputs = self.mapping(features)
-    # outputs = self.coords.physics_to_dycore_sharding(outputs)
+    outputs = parallelism.with_physics_to_dycore_sharding(self.mesh, outputs)
     outputs = self.transform(outputs)
-    # outputs = self.coords.with_dycore_sharding(outputs)
+    outputs = parallelism.with_dycore_sharding(self.mesh, outputs)
     return outputs
 
   @property
@@ -312,6 +313,7 @@ class CoordsStateMapping(nnx.Module):
       volume_field_names: tuple[str, ...],
       embedding_factory: PytreeMappingFactory,
       transform: pytree_transforms.Transform = pytree_transforms.Identity(),
+      mesh: parallelism.Mesh,
       rngs: nnx.Rngs,
   ):
     output_shapes = {}
@@ -324,11 +326,12 @@ class CoordsStateMapping(nnx.Module):
     self.coords = coords
     self.embedding = embedding_factory(output_shapes, rngs=rngs)
     self.transform = transform
+    self.mesh = mesh
 
   def __call__(self, inputs: typing.PyTreeState) -> typing.PyTreeState:
     output = self.embedding(inputs)
     output = self.transform(output)
-    # outputs = self.coords.with_dycore_sharding(outputs)
+    output = parallelism.with_dycore_sharding(self.mesh, output)
     return output
 
   @property

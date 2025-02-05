@@ -23,6 +23,7 @@ from flax import nnx
 import jax
 from neuralgcm.experimental import coordinates
 from neuralgcm.experimental import orographies
+from neuralgcm.experimental import parallelism
 from neuralgcm.experimental import pytree_mappings
 from neuralgcm.experimental import pytree_transforms
 from neuralgcm.experimental import pytree_utils
@@ -51,6 +52,8 @@ class PrimitiveEquations(ImplicitExplicitODE):
       ),
       equation_cls=primitive_equations.MoistPrimitiveEquationsWithCloudMoisture,
       include_vertical_advection: bool = True,
+      *,
+      mesh: parallelism.Mesh,
   ):
     self.coords = coords
     self.orography_module = orography_module
@@ -60,11 +63,16 @@ class PrimitiveEquations(ImplicitExplicitODE):
     self.vertical_advection = vertical_advection
     self.include_vertical_advection = include_vertical_advection
     self.equation_cls = equation_cls
+    self.mesh = mesh
 
   @property
   def primitive_equation(self):
+    dinosaur_coords = self.coords.dinosaur_coords
+    dinosaur_coords = dataclasses.replace(
+        dinosaur_coords, spmd_mesh=self.mesh.spmd_mesh
+    )
     return self.equation_cls(
-        coords=self.coords.dinosaur_coords,
+        coords=dinosaur_coords,
         physics_specs=self.sim_units,
         reference_temperature=np.asarray(self.reference_temperatures),
         orography=self.orography_module.modal_orography,

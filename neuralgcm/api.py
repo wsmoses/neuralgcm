@@ -364,9 +364,9 @@ class PressureLevelModel:
 
     Args:
       data: dict of arrays with shapes matching input/outputs or encoded model
-        state for this model, i.e., with shape
-        `([time,] level, longitude, latitude)`,
-        where `[time,]` indicates an optional leading time dimension.
+        state for this model, i.e., with shape `([time,] level, longitude,
+        latitude)`, where `[time,]` indicates an optional leading time
+        dimension.
       times: either `None` indicating no leading time dimension on any
         variables, or a coordinate array of times with shape `(time,)`.
       decoded: if `True`, use `self.data_coords` to determine the output
@@ -512,13 +512,13 @@ class PressureLevelModel:
       steps: number of time-steps to take.
       timedelta: size of each time-step to take, which must be a multiple of the
         internal model timestep. By default uses the internal model timestep.
-      start_with_input: if ``True``, outputs are at times ``[0, ...,
-        (steps - 1) * timestep]`` relative to the initial time; if ``False``,
-        outputs are at times ``[timestep, ..., steps * timestep]``.
+      start_with_input: if ``True``, outputs are at times ``[0, ..., (steps - 1)
+        * timestep]`` relative to the initial time; if ``False``, outputs are at
+        times ``[timestep, ..., steps * timestep]``.
       post_process_fn: optional function to apply to each advanced state and
-        current forcings to create outputs like
-        ``post_process_fn(state, forcings)``, where ``forcings`` does not
-        include a time axis. By default, uses ``model.decode``.
+        current forcings to create outputs like ``post_process_fn(state,
+        forcings)``, where ``forcings`` does not include a time axis. By
+        default, uses ``model.decode``.
 
     Returns:
       A tuple of the advanced state at time ``steps * timestamp``, and outputs
@@ -540,6 +540,7 @@ class PressureLevelModel:
         sim_time = _sim_time_from_state(state)
         forcings = get_nearest_forcings(sim_time)
         return func(state, forcings)
+
       return wrapped
 
     if post_process_fn is None:
@@ -569,7 +570,20 @@ class PressureLevelModel:
       Instance of a `PressureLevelModel` with weights and configuration
       specified by the checkpoint.
     """
-    with gin_utils.specific_config(checkpoint['model_config_str']):
+    # Hard code radius=1.0 to enable breaking changes in Dinosaur.
+    model_config_str = (
+        checkpoint['model_config_str'].replace(
+            'GridWithWavenumbers.radius = None',
+            'GridWithWavenumbers.radius = 1.0',
+        )
+        + '\n\n'
+        + '\n'.join([
+            'GridTL63.radius = 1.0',
+            'GridTL127.radius = 1.0',
+            'GridTL255.radius = 1.0',
+        ])
+    )
+    with gin_utils.specific_config(model_config_str):
       physics_specs = physics_specifications.get_physics_specs()
       aux_ds = xarray.Dataset.from_dict(checkpoint['aux_ds_dict'])
       data_coords = model_builder.coordinate_system_from_dataset(aux_ds)
@@ -584,6 +598,4 @@ class PressureLevelModel:
           input_coords=data_coords,
           output_coords=data_coords,
       )
-      return cls(
-          whirl_model, checkpoint['params'], checkpoint['model_config_str']
-      )
+      return cls(whirl_model, checkpoint['params'], model_config_str)

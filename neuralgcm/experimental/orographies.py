@@ -16,6 +16,7 @@
 
 import dataclasses
 
+from dinosaur import xarray_utils as dino_xarray_utils
 from flax import nnx
 import jax.numpy as jnp
 from neuralgcm.experimental import coordax as cx
@@ -75,12 +76,19 @@ class ModalOrography(nnx.Module):
     nodal_orography = xarray_utils.nodal_orography_from_ds(dataset)
     nodal_orography = xarray_utils.xarray_nondimensionalize(
         nodal_orography, sim_units
-    ).values
-    data_coords = xarray_utils.coordinates_from_dataset(dataset)
-    assert isinstance(data_coords, coordinates.DinosaurCoordinates)
+    )
+    nodal_orography = coordinates.field_from_xarray(nodal_orography)
+    data_grid = cx.compose_coordinates(
+        *(nodal_orography.coords[d] for d in nodal_orography.dims)
+    )
+    # TODO(dkochkov) Introduce objects for specifying nodal-modal conversions.
+    data_grid = coordinates.LonLatGrid.from_dinosaur_grid(
+        dino_xarray_utils.LINEAR_SHAPE_TO_GRID_DICT[data_grid.shape]()
+    )
+    nodal_orography = nodal_orography.data
     if not isinstance(spatial_filter, spatial_filters.ModalSpatialFilter):
       nodal_orography = spatial_filter(nodal_orography)
-    data_grid = data_coords.horizontal
+
     if isinstance(data_grid, coordinates.SphericalHarmonicGrid):
       data_modal_grid = data_grid
     elif isinstance(data_grid, coordinates.LonLatGrid):
@@ -128,11 +136,16 @@ class Orography(nnx.Module):
     nodal_orography = xarray_utils.nodal_orography_from_ds(dataset)
     nodal_orography = xarray_utils.xarray_nondimensionalize(
         nodal_orography, sim_units
-    ).values
-    data_coords = xarray_utils.coordinates_from_dataset(dataset)
-    assert isinstance(data_coords, coordinates.DinosaurCoordinates)
+    )
+    nodal_orography = coordinates.field_from_xarray(nodal_orography)
+    data_grid = cx.compose_coordinates(
+        *(nodal_orography.coords[d] for d in nodal_orography.dims)
+    )
+    # TODO(dkochkov) Introduce objects for specifying nodal-modal conversions.
+    data_grid = coordinates.LonLatGrid.from_dinosaur_grid(
+        dino_xarray_utils.LINEAR_SHAPE_TO_GRID_DICT[data_grid.shape]()
+    )
     nodal_orography = spatial_filter(nodal_orography)
-    data_grid = data_coords.horizontal
     if data_grid != self.grid:
       raise ValueError(f'{data_grid=} does not match {self.grid=}.')
     self.orography.value = nodal_orography

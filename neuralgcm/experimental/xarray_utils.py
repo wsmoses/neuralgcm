@@ -34,7 +34,7 @@ verify_grid_consistency = dino_xarray_utils.verify_grid_consistency
 def xarray_nondimensionalize(
     ds: xarray.Dataset | xarray.DataArray,
     sim_units: units.SimUnits,
-) -> xarray.Dataset:
+) -> xarray.Dataset | xarray.DataArray:
   return xarray.apply_ufunc(sim_units.nondimensionalize, ds)
 
 

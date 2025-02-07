@@ -82,19 +82,15 @@ class ModalOrography(nnx.Module):
         *(nodal_orography.coords[d] for d in nodal_orography.dims)
     )
     # TODO(dkochkov) Introduce objects for specifying nodal-modal conversions.
-    data_grid = coordinates.LonLatGrid.from_dinosaur_grid(
-        dino_xarray_utils.LINEAR_SHAPE_TO_GRID_DICT[data_grid.shape]()
+    ylm_grid = dino_xarray_utils.LINEAR_SHAPE_TO_GRID_DICT[data_grid.shape](
+        spherical_harmonics_impl=self.grid.spherical_harmonics_impl
     )
+    data_grid = coordinates.LonLatGrid.from_dinosaur_grid(ylm_grid)
     nodal_orography = nodal_orography.data
     if not isinstance(spatial_filter, spatial_filters.ModalSpatialFilter):
       nodal_orography = spatial_filter(nodal_orography)
 
-    if isinstance(data_grid, coordinates.SphericalHarmonicGrid):
-      data_modal_grid = data_grid
-    elif isinstance(data_grid, coordinates.LonLatGrid):
-      data_modal_grid = data_grid.to_spherical_harmonic_grid()
-    else:
-      raise ValueError(f'Unsupported data grid {data_grid=}')
+    data_modal_grid = data_grid.to_spherical_harmonic_grid()
     modal_orography = data_modal_grid.ylm_grid.to_modal(nodal_orography)
     interpolator = interpolators.SpectralRegridder(self.grid)
     modal_orography = interpolator(cx.wrap(modal_orography, data_modal_grid))
@@ -142,9 +138,11 @@ class Orography(nnx.Module):
         *(nodal_orography.coords[d] for d in nodal_orography.dims)
     )
     # TODO(dkochkov) Introduce objects for specifying nodal-modal conversions.
-    data_grid = coordinates.LonLatGrid.from_dinosaur_grid(
-        dino_xarray_utils.LINEAR_SHAPE_TO_GRID_DICT[data_grid.shape]()
+    ylm_grid = dino_xarray_utils.LINEAR_SHAPE_TO_GRID_DICT[data_grid.shape](
+        spherical_harmonics_impl=self.grid.spherical_harmonics_impl
     )
+    data_grid = coordinates.LonLatGrid.from_dinosaur_grid(ylm_grid)
+    nodal_orography = nodal_orography.data
     nodal_orography = spatial_filter(nodal_orography)
     if data_grid != self.grid:
       raise ValueError(f'{data_grid=} does not match {self.grid=}.')

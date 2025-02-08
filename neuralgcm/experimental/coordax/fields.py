@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import collections
 import functools
-import itertools
 import operator
 import textwrap
 import typing
@@ -33,6 +32,8 @@ from neuralgcm.experimental.coordax import coordinate_systems
 from neuralgcm.experimental.coordax import named_axes
 from neuralgcm.experimental.coordax import utils
 import numpy as np
+from treescope import lowering
+from treescope import rendering_parts
 # TODO(shoyer): consider making Xarray an optional dependency of core Coordax
 import xarray
 
@@ -48,6 +49,17 @@ def _dimension_names(*names: str | Coordinate) -> tuple[str, ...]:
   """Returns a tuple of dimension names from a list of names or coordinates."""
   dims_or_name_tuple = lambda x: x.dims if isinstance(x, Coordinate) else (x,)
   return sum([dims_or_name_tuple(c) for c in names], start=tuple())
+
+
+def _coordinate_attrs(field: Field) -> str:
+  """Returns a string representation of the coordinate attributes."""
+  def _coord_name(c: coordinate_systems.Coordinate):
+    if isinstance(c, coordinate_systems.SelectedAxis):
+      return f'SelectedAxis({c.coordinate.__class__.__name__}, axis={c.axis})'
+    return c.__class__.__name__
+
+  coord_names = {k: _coord_name(c) for k, c in field.coords.items()}
+  return '{' + ', '.join(f'{k!r}: {v}' for k, v in coord_names.items()) + '}'
 
 
 @utils.export
@@ -493,6 +505,64 @@ class Field:
         dims={self.dims},
         coords={coords_repr},
     )""")
+
+  def __treescope_repr__(self, path: str | None, subtree_renderer: Any):
+    """Treescope handler for Field."""
+
+    def _make_label():
+      # reuse dim/shape summary from the underlying NamedArray.
+      attrs, summary, data_type = named_axes.attrs_summary_type(
+          self.named_array, False
+      )
+      coord_attrs = _coordinate_attrs(self)
+      attrs = ' '.join([attrs, f'coords={coord_attrs}'])
+
+      return rendering_parts.summarizable_condition(
+          summary=rendering_parts.abbreviation_color(  # non-expanded repr.
+              rendering_parts.text(
+                  f'<{type(self).__name__} {attrs} {summary} (wrapping'
+                  f' {data_type})>'
+              )
+          ),
+          detail=rendering_parts.siblings(
+              rendering_parts.text(f'<{type(self).__name__} ('),
+              rendering_parts.fold_condition(
+                  expanded=rendering_parts.comment_color(
+                      rendering_parts.text('  # ' + summary)
+                  )
+              ),
+          ),
+      )
+
+    children = rendering_parts.build_field_children(
+        self,
+        path,
+        subtree_renderer,
+        fields_or_attribute_names=('dims', 'coords'),
+    )
+    indented_children = rendering_parts.indented_children(children)
+    return rendering_parts.build_custom_foldable_tree_node(
+        contents=rendering_parts.summarizable_condition(
+            detail=rendering_parts.siblings(indented_children, ')')
+        ),
+        label=lowering.maybe_defer_rendering(
+            main_thunk=lambda _: _make_label(),
+            placeholder_thunk=_make_label,
+        ),
+        path=path,
+        expand_state=rendering_parts.ExpandState.COLLAPSED,
+    )
+
+  def __treescope_ndarray_adapter__(self):
+    """Treescope handler for named arrays."""
+    def _summary_fn(field, inspect_data):
+      attrs, array_summary, data_type = named_axes.attrs_summary_type(
+          field.named_array, inspect_data
+      )
+      coord_attrs = _coordinate_attrs(field)
+      attrs = ', '.join([attrs, f'coords={coord_attrs}'])
+      return attrs, array_summary, data_type
+    return named_axes.NamedArrayAdapter(_summary_fn)
 
   # Convenience wrappers: Elementwise infix operators.
   __lt__ = _cmap_with_doc(operator.lt, 'jax.Array.__lt__')

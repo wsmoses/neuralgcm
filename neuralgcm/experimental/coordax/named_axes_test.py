@@ -19,6 +19,7 @@ import jax
 import jax.numpy as jnp
 from neuralgcm.experimental.coordax import named_axes
 import numpy as np
+import treescope
 
 
 def assert_named_array_equal(
@@ -462,7 +463,7 @@ class NamedAxesTest(absltest.TestCase):
 
   def test_nmap_inconsistent_named_shape(self):
 
-    def accepts_anything(*args, **kwargs):
+    def accepts_anything(*unused_args, **unused_kwargs):
       return 1
 
     array1 = named_axes.NamedArray(np.zeros((2, 3)), ('x', 'y'))
@@ -604,8 +605,7 @@ class NamedAxesTest(absltest.TestCase):
     with self.assertRaisesRegex(
         ValueError,
         re.escape(
-            'out_axes must all have unique values, but got '
-            "{'x': 0, 'y': 0}"
+            "out_axes must all have unique values, but got {'x': 0, 'y': 0}"
         ),
     ):
       named_axes.nmap(lambda x: x, out_axes={'x': 0, 'y': 0})(array)
@@ -656,6 +656,58 @@ class NamedAxesTest(absltest.TestCase):
     actual = named_axes.untag(tagged_tree, 'x', 'y')
     assert_named_array_equal(actual['a'], untagged_tree['a'])
     assert_named_array_equal(actual['b'], untagged_tree['b'])
+
+  def test_array_renders_without_error(self):
+    data = np.arange(19 * 23).reshape((19, 23))
+    array = named_axes.NamedArray(data, ('x', 'y'))
+
+    with self.subTest('explicit_unmasked'):
+      res = treescope.render_array(array)
+      self.assertTrue(hasattr(res, '_repr_html_'))
+
+    with self.subTest('explicit_masked'):
+      res = treescope.render_array(array, valid_mask=array > 100)
+      self.assertTrue(hasattr(res, '_repr_html_'))
+
+    with self.subTest('explicit_masked_truncated'):
+      res = treescope.render_array(
+          array, valid_mask=array > 100, truncate=True, maximum_size=100
+      )
+      self.assertTrue(hasattr(res, '_repr_html_'))
+
+    with self.subTest('automatic'):
+      with treescope.active_autovisualizer.set_scoped(
+          treescope.ArrayAutovisualizer()
+      ):
+        res = treescope.render_to_html(
+            array, ignore_exceptions=False, compressed=False
+        )
+        self.assertIsInstance(res, str)
+        self.assertIn('arrayviz', res)
+
+  def test_named_array_info_(self):
+    data = np.arange(19 * 23).reshape((19, 23))
+    array = named_axes.NamedArray(data, ('x', 'y'))
+    adapter = treescope.type_registries.lookup_ndarray_adapter(array)
+    with self.subTest('adapter_lookup'):
+      self.assertIsNotNone(adapter)
+    with self.subTest('named_positional_axis_info'):
+      self.assertEqual(
+          adapter.get_axis_info_for_array_data(array),
+          (
+              treescope.ndarray_adapters.NamedPositionalAxisInfo(0, 'x', 19),
+              treescope.ndarray_adapters.NamedPositionalAxisInfo(1, 'y', 23),
+          ),
+      )
+    with self.subTest('named_and_positional_axis_info'):
+      array = named_axes.NamedArray(data, (None, 'x'))
+      self.assertEqual(
+          adapter.get_axis_info_for_array_data(array),
+          (
+              treescope.ndarray_adapters.PositionalAxisInfo(0, 19),
+              treescope.ndarray_adapters.NamedPositionalAxisInfo(1, 'x', 23),
+          ),
+      )
 
 
 if __name__ == '__main__':

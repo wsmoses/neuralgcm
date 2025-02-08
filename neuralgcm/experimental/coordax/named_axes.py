@@ -32,6 +32,133 @@ from typing import Any, Callable, Self, TypeGuard, TypeVar
 import jax
 import jax.numpy as jnp
 import numpy as np
+from treescope import dtype_util
+from treescope import lowering
+from treescope import ndarray_adapters
+from treescope import rendering_parts
+from treescope.external import jax_support
+
+
+def attrs_summary_type(
+    named_array: NamedArray, inspect_data: bool,
+) -> tuple[str, str, str]:
+  """Returns a summary of a `named_array` and its data type."""
+  if isinstance(named_array.data, jax.Array) and not isinstance(
+      named_array.data, jax.core.Tracer
+  ):
+    contained_type = 'jax.Array'
+  else:
+    contained_type = type(named_array.data).__name__
+
+  type_info = dtype_util.get_dtype_name(named_array.dtype)
+  attrs_parts = []
+  attrs_parts.append(f'dims={named_array.dims}')
+  attrs_parts.append(f'shape={named_array.shape}')
+  summary_parts = []
+  summary_parts.append(f'dtype={type_info}')
+  if (
+      inspect_data
+      and isinstance(named_array.data, jax.Array)
+      and jax_support.safe_to_summarize(named_array.data)
+  ):
+    summary_parts.append(
+        jax_support.summarize_array_data(named_array.data)
+    )
+  attrs = ' '.join(attrs_parts)
+  summary = ','.join(summary_parts)
+  return attrs, summary, contained_type
+
+
+class NamedArrayAdapter(ndarray_adapters.NDArrayAdapter['NamedArray']):
+  """Array adapter for named arrays."""
+
+  def __init__(self, summary_fn: Callable[..., tuple[str, str, str]]):
+    self.summary_fn = summary_fn
+
+  def get_axis_info_for_array_data(
+      self, array: NamedArray
+  ) -> tuple[ndarray_adapters.AxisInfo, ...]:
+    infos = {}
+    for axis, dim in enumerate(array.dims):
+      if dim is None:
+        infos[axis] = ndarray_adapters.PositionalAxisInfo(
+            axis, array.shape[axis]
+        )
+      else:
+        infos[axis] = ndarray_adapters.NamedPositionalAxisInfo(
+            axis_logical_index=axis,
+            axis_name=dim,  # pytype: disable=wrong-arg-types
+            size=array.shape[axis],
+        )
+    return tuple(infos[i] for i in range(len(infos)))
+
+  def get_array_data_with_truncation(
+      self,
+      array: NamedArray,
+      mask: NamedArray | jax.Array | np.ndarray | None,
+      edge_items_per_axis: tuple[int | None, ...],
+  ) -> tuple[np.ndarray, np.ndarray]:
+    if mask is None:
+      mask_data = None  # sets no mask in the JAXArrayAdapter.
+    else:
+      # Make sure mask is compatible.
+      if isinstance(mask, NamedArray):
+        if mask.dims.count(None):
+          raise ValueError(f'Mask must be fully named, got {mask.dims=}')
+        bad_names = set(mask.dims) - set(array.dims)
+        if bad_names:
+          raise ValueError(
+              'Valid mask must be broadcastable to the shape of `array`, but it'
+              f' had extra axis names {bad_names}'
+          )
+        mask = mask.order_as(*(d for d in array.dims if d in mask.dims))
+        mask_data = mask.data
+      else:
+        if np.broadcast_shapes(mask.shape, array.shape) != array.shape:
+          raise ValueError(
+              f'{mask.shape=} is not broadcastable to {array.shape=}'
+          )
+        mask_data = jnp.broadcast_to(mask, array.shape)
+
+    return jax_support.JAXArrayAdapter().get_array_data_with_truncation(
+        array=array.data,
+        mask=mask_data,
+        edge_items_per_axis=edge_items_per_axis,
+    )
+
+  def get_array_summary(self, array: NamedArray, fast: bool) -> str:
+    attrs, summary, contained_type = self.summary_fn(
+        array, inspect_data=(not fast)
+    )
+    full_summary = (
+        f'{type(array).__name__}({attrs}, {summary}) (wrapping'
+        f' {contained_type})'
+    )
+    return full_summary
+
+  def get_numpy_dtype(self, array: NamedArray) -> np.dtype | None:
+    if isinstance(array.dtype, np.dtype):
+      return array.dtype
+    else:
+      return None
+
+  def get_sharding_info_for_array_data(
+      self, array: NamedArray
+  ) -> ndarray_adapters.ShardingInfo | None:
+    if not isinstance(array.data, jax.Array):
+      return None
+    return jax_support.JAXArrayAdapter().get_sharding_info_for_array_data(
+        array.data
+    )
+
+  def should_autovisualize(self, array: NamedArray) -> bool:
+    # only visualize jax.Arrays that are not Tracers and not deleted to avoid
+    # raising an errors during visualization.
+    return (
+        isinstance(array.data, jax.Array)
+        and not isinstance(array.data, jax.core.Tracer)
+        and not array.data.is_deleted()
+    )
 
 
 def _collect_named_shape(
@@ -452,6 +579,26 @@ class NamedArray:
   def dtype(self) -> jnp.dtype:
     """The dtype of the underlying data array."""
     return self.data.dtype
+
+  def __treescope_repr__(self, path: str | None, subtree_renderer: Any):
+    """Treescope handler."""
+    def _make_label():
+      attrs, summary, contained_type = attrs_summary_type(self, False)
+      return rendering_parts.text(
+          f'<{type(self).__name__}({attrs} {summary}) (wrapping'
+          f' {contained_type})>'
+      )
+
+    return rendering_parts.abbreviation_color(
+        lowering.maybe_defer_rendering(
+            main_thunk=lambda _: _make_label(),
+            placeholder_thunk=_make_label,
+        )
+    )
+
+  def __treescope_ndarray_adapter__(self):
+    """Treescope handler for named arrays."""
+    return NamedArrayAdapter(attrs_summary_type)
 
   def __repr__(self) -> str:
     indent = lambda x: textwrap.indent(x, prefix=' ' * 13)[13:]

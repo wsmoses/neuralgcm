@@ -22,6 +22,7 @@ from dinosaur import sigma_coordinates
 from flax import nnx
 import jax
 from neuralgcm.experimental import coordinates
+from neuralgcm.experimental import nnx_compat
 from neuralgcm.experimental import orographies
 from neuralgcm.experimental import parallelism
 from neuralgcm.experimental import pytree_mappings
@@ -160,7 +161,7 @@ def _sum_non_nones(*args: jax.Array | None) -> jax.Array | None:
   return sum(terms) if terms else None
 
 
-@dataclasses.dataclass
+@nnx_compat.dataclass
 class ComposedODE(ImplicitExplicitODE):
   """Composed equation with exactly one ImplicitExplicitODE instance."""
 
@@ -193,7 +194,7 @@ class ComposedODE(ImplicitExplicitODE):
     return self.implicit_explicit_equation.implicit_inverse(x, step_size)
 
 
-@dataclasses.dataclass
+@nnx_compat.dataclass
 class ComposedExplicitODE(ExplicitODE):
   """Composed explicit equation."""
 

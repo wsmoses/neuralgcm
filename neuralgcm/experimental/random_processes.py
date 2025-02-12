@@ -23,6 +23,7 @@ import jax
 import jax.numpy as jnp
 from neuralgcm.experimental import coordax as cx
 from neuralgcm.experimental import coordinates
+from neuralgcm.experimental import nnx_compat
 from neuralgcm.experimental import parallelism
 from neuralgcm.experimental import typing
 from neuralgcm.experimental import units
@@ -83,7 +84,7 @@ class RandomProcessModule(nnx.Module, abc.ABC):
     return tuple()
 
 
-@dataclasses.dataclass
+@nnx_compat.dataclass
 class UniformUncorrelated(RandomProcessModule):
   """Scalar time-independent uniform random process."""
 

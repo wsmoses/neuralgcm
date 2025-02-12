@@ -21,6 +21,7 @@ from typing import Sequence
 from dinosaur import filtering
 from flax import nnx
 from neuralgcm.experimental import coordinates
+from neuralgcm.experimental import nnx_compat
 from neuralgcm.experimental import parallelism
 from neuralgcm.experimental import typing
 from neuralgcm.experimental import units
@@ -108,7 +109,7 @@ class ExponentialModalFilter(ModalSpatialFilter):
     )
 
 
-@dataclasses.dataclass
+@nnx_compat.dataclass
 class SequentialModalFilter(ModalSpatialFilter):
   """Modal filter that applies multiple filters sequentially."""
 

@@ -19,10 +19,11 @@ import dataclasses
 from absl.testing import absltest
 from absl.testing import parameterized
 from flax import nnx
+from neuralgcm.experimental import nnx_compat
 from neuralgcm.experimental import time_integrators
 
 
-@dataclasses.dataclass
+@nnx_compat.dataclass
 class MockStep(nnx.Module):
   """Mock step module for testing."""
 

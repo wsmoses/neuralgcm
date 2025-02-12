@@ -14,12 +14,11 @@
 
 """Module-based API for calculating diagnostics of NeuralGCM models."""
 
-import dataclasses
-
 from flax import nnx
 import jax.numpy as jnp
 from neuralgcm.experimental import coordax as cx
 from neuralgcm.experimental import data_specs
+from neuralgcm.experimental import nnx_compat
 from neuralgcm.experimental import typing
 import neuralgcm.experimental.jax_datetime as jdt
 
@@ -30,7 +29,7 @@ class DiagnosticValue(nnx.Intermediate):
   ...
 
 
-@dataclasses.dataclass
+@nnx_compat.dataclass
 class DiagnosticModule(nnx.Module):
   """Base API for diagnostic modules."""
 

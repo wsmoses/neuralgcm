@@ -14,11 +14,11 @@
 
 """Defines equation and time integration modules."""
 
-import dataclasses
 from typing import Callable
 
 from dinosaur import time_integration
 from flax import nnx
+from neuralgcm.experimental import nnx_compat
 from neuralgcm.experimental import typing
 import tree_math
 
@@ -75,7 +75,7 @@ def forward_euler(equation: ExplicitODE, time_step: float) -> typing.StepFn:
   return step_fn
 
 
-@dataclasses.dataclass
+@nnx_compat.dataclass
 class DinosaurIntegrator(nnx.Module):
   """Module that wraps time integrators from dinosaur package."""
 

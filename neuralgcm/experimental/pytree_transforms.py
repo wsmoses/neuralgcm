@@ -41,6 +41,7 @@ from neuralgcm.experimental import coordinates
 from neuralgcm.experimental import data_specs
 from neuralgcm.experimental import dynamic_io
 from neuralgcm.experimental import jax_solar
+from neuralgcm.experimental import nnx_compat
 from neuralgcm.experimental import orographies
 from neuralgcm.experimental import parallelism
 from neuralgcm.experimental import pytree_utils
@@ -111,7 +112,7 @@ class Empty(TransformABC):
     return {}
 
 
-@dataclasses.dataclass
+@nnx_compat.dataclass
 class NestDict(TransformABC):
   """Transform that nests elements of a flat dictionary into a nested dict."""
 
@@ -209,7 +210,7 @@ class BatchShiftAndNormalize(TransformABC):
     )
 
 
-@dataclasses.dataclass
+@nnx_compat.dataclass
 class FeatureSelector(TransformABC):
   """Features transform that retains items whose keys match against regex.
 
@@ -370,7 +371,7 @@ class TakeSurfaceAdjacentSigmaLevel(TransformABC):
     return from_dict_fn(outputs)
 
 
-@dataclasses.dataclass
+@nnx_compat.dataclass
 class ClipWavenumbers(TransformABC):
   """Sets top `wavenumbers_to_clip` total wavenumbers to zero in the input."""
 
@@ -451,7 +452,7 @@ class MaskTransform(TransformABC):
     return from_dict_fn(inputs)
 
 
-@dataclasses.dataclass
+@nnx_compat.dataclass
 class ToModalWithDivCurl(TransformABC):
   """Module that converts inputs to modal replacing velocity with div/curl."""
 
@@ -490,7 +491,7 @@ class ToModalWithDivCurl(TransformABC):
     return modal_outputs
 
 
-@dataclasses.dataclass
+@nnx_compat.dataclass
 class ToNodalWithVelocity(TransformABC):
   """Module that converts inputs to nodal replacing div/curl with velocity."""
 
@@ -786,7 +787,7 @@ class RadiationFeatures(TransformABC):
     return self.transform(features)
 
 
-@dataclasses.dataclass
+@nnx_compat.dataclass
 class LatitudeFeatures(TransformABC):
   """Feature module that creates cos and sin of latitude features."""
 
@@ -805,7 +806,7 @@ class LatitudeFeatures(TransformABC):
     return self.transform(features)
 
 
-@dataclasses.dataclass
+@nnx_compat.dataclass
 class OrographyFeatures(TransformABC):
   """Feature module that computes orographic features."""
 
@@ -819,7 +820,7 @@ class OrographyFeatures(TransformABC):
     })
 
 
-@dataclasses.dataclass
+@nnx_compat.dataclass
 class OrographyWithGradsFeatures(TransformABC):
   """Feature module that computes orographic features and their gradients."""
 
@@ -852,7 +853,7 @@ class OrographyWithGradsFeatures(TransformABC):
     return self.transform(features)
 
 
-@dataclasses.dataclass
+@nnx_compat.dataclass
 class PressureFeatures(TransformABC):
   """Feature module that computes pressure."""
 
@@ -884,7 +885,7 @@ class PressureFeatures(TransformABC):
     return self.transform({'pressure': pressure})
 
 
-@dataclasses.dataclass
+@nnx_compat.dataclass
 class RandomnessFeatures(nnx.Module):
   """Feature module that returns values from a random process."""
 
@@ -911,7 +912,7 @@ class RandomnessFeatures(nnx.Module):
     })
 
 
-@dataclasses.dataclass
+@nnx_compat.dataclass
 class DynamicInputFeatures(TransformABC):
   """Feature module for computes dynamic input features."""
 
@@ -1219,7 +1220,7 @@ class VolumeEmbeddingFeatures(TransformABC):
     return self.transform.output_shapes(self.embedding.output_shapes)
 
 
-@dataclasses.dataclass
+@nnx_compat.dataclass
 class CombinedFeatures(TransformABC):
   """Feature module that combines multiple feature modules together.
 

@@ -32,6 +32,7 @@ from neuralgcm.experimental import diagnostics
 from neuralgcm.experimental import dynamic_io
 from neuralgcm.experimental import fiddle_tags  # pylint: disable=unused-import
 from neuralgcm.experimental import module_utils
+from neuralgcm.experimental import nnx_compat
 from neuralgcm.experimental import parallelism
 from neuralgcm.experimental import random_processes
 from neuralgcm.experimental import time_integrators
@@ -61,7 +62,7 @@ def calculate_sub_steps(
   return round(time_step_ratio)
 
 
-@dataclasses.dataclass
+@nnx_compat.dataclass
 class ForecastSystem(nnx.Module, abc.ABC):
   """Base class for forecast systems."""
 

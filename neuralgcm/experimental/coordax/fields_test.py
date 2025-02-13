@@ -423,6 +423,9 @@ class FieldTest(parameterized.TestCase):
       def ndim(self) -> int:
         return len(self.a.shape)
 
+      def __getitem__(self, value):
+        return Duck(self.a[value], self.b[value])
+
       def transpose(self, axes: tuple[int, ...]):
         return Duck(self.a.transpose(axes), self.b.transpose(axes))
 

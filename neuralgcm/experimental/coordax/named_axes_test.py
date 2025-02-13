@@ -71,6 +71,12 @@ class NamedAxesTest(absltest.TestCase):
     )
 
   def test_constructor_error(self):
+    with self.assertRaisesWithLiteralMatch(
+        TypeError,
+        'data must be a jax.Array or a duck-typed array registered with'
+        ' coordax.DuckArray.register(), got dict: {}',
+    ):
+      named_axes.NamedArray({})
     with self.assertRaisesRegex(
         ValueError, re.escape(r'data.ndim=2 != len(dims)=1')
     ):
@@ -749,6 +755,9 @@ class NamedAxesTest(absltest.TestCase):
 
       def transpose(self, axes: tuple[int, ...]):
         return Duck(self.a.transpose(axes), self.b.transpose(axes))
+
+      def __getitem__(self, value):
+        return Duck(self.a[value], self.b[value])
 
       def __add__(self, other: int):
         # intentionally implement something funny, that is not equal to

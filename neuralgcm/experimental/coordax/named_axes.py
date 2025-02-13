@@ -472,29 +472,37 @@ def _wrap_array_method(
 
 
 class DuckArray(abc.ABC):
-  """Base class for non-jax.Array objects that can be used with Coordax."""
+  """Base class for non-jax.Array objects that can be used with Coordax.
+
+  To register a new duck-typed array, either inherit from this class or use
+  `coordax.DuckArray.register()`.
+  """
 
   @property
   @abc.abstractmethod
   def shape(self) -> tuple[int, ...]:
-    ...
+    """Shape of this array."""
 
   @property
   @abc.abstractmethod
   def size(self) -> int:
-    ...
+    """Size of this array, typically `math.prod(self.shape)`."""
 
   @property
   @abc.abstractmethod
   def ndim(self) -> int:
-    ...
+    """Number of dimensions in this array, typcially `len(self.shape)`."""
 
   @abc.abstractmethod
   def transpose(self, axes: tuple[int, ...]) -> Self:
-    ...
+    """Transpose this array to this given axis order."""
 
-  # TODO(shoyer): add __getitem__? We don't need it in coordax (currently) but
-  # it's hard to argue that you have a generic array class without it.
+  # Note: __getitem__ is not yet used by Coordax, but we will likely want it in
+  # the near the future.
+  # TODO(shoyer): Figure out the precise type for `value`.
+  @abc.abstractmethod
+  def __getitem__(self, value) -> Self:
+    """Index this array, returning a new array."""
 
 
 Array = jax.Array | DuckArray
@@ -553,7 +561,14 @@ class NamedArray:
         are positional.
     """
     if not isinstance(data, DuckArray):
-      data = jnp.asarray(data)
+      try:
+        data = jnp.asarray(data)
+      except TypeError as e:
+        raise TypeError(
+            'data must be a jax.Array or a duck-typed array registered with '
+            f'coordax.DuckArray.register(), got {type(data).__name__}: {data}'
+        ) from e
+
     if dims is None:
       dims = (None,) * data.ndim
     else:

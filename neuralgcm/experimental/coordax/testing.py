@@ -2,6 +2,8 @@
 
 from typing import Mapping
 
+import functools
+
 import chex
 import jax
 from neuralgcm.experimental import coordax
@@ -10,7 +12,7 @@ import numpy as np
 
 def assert_field_properties(
     actual: coordax.Field,
-    data: np.ndarray | jax.Array | None = None,
+    data: np.ndarray | jax.Array | coordax.DuckArray | None = None,
     dims: tuple[str, ...] | None = None,
     shape: tuple[int, ...] | None = None,
     coords: Mapping[str, coordax.Coordinate] | None = None,
@@ -23,9 +25,9 @@ def assert_field_properties(
   """Asserts that a Field has expected properties."""
   if data is not None:
     if atol is None and rtol is None:
-      np.testing.assert_array_equal(actual.data, data)
+      chex.assert_trees_all_equal(actual.data, data)
     else:
-      np.testing.assert_allclose(actual.data, data, rtol=rtol, atol=atol)
+      chex.assert_trees_all_close(actual.data, data, rtol=rtol, atol=atol)
   if dims is not None:
     chex.assert_equal(actual.dims, dims)
   if shape is not None:

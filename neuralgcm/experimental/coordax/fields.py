@@ -44,6 +44,8 @@ Sequence = collections.abc.Sequence
 T = TypeVar('T')
 Coordinate = coordinate_systems.Coordinate
 
+Array = jax.Array | named_axes.DuckArray
+
 
 def _dimension_names(*names: str | Coordinate) -> tuple[str, ...]:
   """Returns a tuple of dimension names from a list of names or coordinates."""
@@ -358,12 +360,12 @@ class Field:
     return self._coords
 
   @property
-  def data(self) -> jax.Array:
+  def data(self) -> Array:
     """The value of the underlying data array."""
     return self.named_array.data
 
   @property
-  def dtype(self) -> np.dtype:
+  def dtype(self) -> np.dtype | None:
     """The dtype of the field."""
     return self.named_array.dtype
 
@@ -419,11 +421,11 @@ class Field:
     result = object.__new__(cls)
     result._named_array = named_array
     result._coords = dict(coords)
-    if isinstance(named_array.data, jnp.ndarray):
+    if isinstance(named_array.data, Array):
       result._check_valid()
     return result
 
-  def unwrap(self, *names: str | Coordinate) -> jax.Array:
+  def unwrap(self, *names: str | Coordinate) -> Array:
     """Extracts underlying data from a field without named dimensions."""
     names = _dimension_names(*names)
     if names != self.named_dims:

@@ -11,10 +11,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import dataclasses
+import math
 import re
 import textwrap
 
 from absl.testing import absltest
+import chex
 import jax
 import jax.numpy as jnp
 from neuralgcm.experimental.coordax import named_axes
@@ -29,6 +32,21 @@ def assert_named_array_equal(
   """Asserts that a NamedArray has the expected data and dims."""
   np.testing.assert_array_equal(actual.data, expected.data)
   assert actual.dims == expected.dims, (expected.dims, actual.dims)
+
+
+def assert_pytree_equal(actual, expected) -> None:
+  """Asserts that two pytrees are equal."""
+  actual_path_vals, actual_treedef = jax.tree.flatten_with_path(actual)
+  expected_path_vals, expected_treedef = jax.tree.flatten_with_path(expected)
+  if actual_treedef != expected_treedef:
+    raise AssertionError(
+        f'actual treedef: {actual_treedef}\n'
+        f'expected treedef: {expected_treedef}'
+    )
+  for (k, actual_value), (_, expected_value) in zip(
+      actual_path_vals, expected_path_vals
+  ):
+    np.testing.assert_array_equal(actual_value, expected_value, err_msg=k)
 
 
 class NamedAxesTest(absltest.TestCase):
@@ -708,6 +726,62 @@ class NamedAxesTest(absltest.TestCase):
               treescope.ndarray_adapters.NamedPositionalAxisInfo(1, 'x', 23),
           ),
       )
+
+  def test_duckarray(self):
+
+    @jax.tree_util.register_dataclass
+    @dataclasses.dataclass
+    class Duck(named_axes.DuckArray):
+      a: jnp.ndarray
+      b: jnp.ndarray
+
+      @property
+      def shape(self) -> tuple[int, ...]:
+        return self.a.shape
+
+      @property
+      def size(self) -> int:
+        return math.prod(self.a.shape)
+
+      @property
+      def ndim(self) -> int:
+        return len(self.a.shape)
+
+      def transpose(self, axes: tuple[int, ...]):
+        return Duck(self.a.transpose(axes), self.b.transpose(axes))
+
+      def __add__(self, other: int):
+        # intentionally implement something funny, that is not equal to
+        # jax.tree.map(jnp.add, self, other)
+        return Duck(self.a * other, self.b * other)
+
+    duck = Duck(a=np.array([1, 2]), b=np.array([3, 4]))
+    array = named_axes.NamedArray(duck)
+    np.testing.assert_array_equal(array.data.a, np.array([1, 2]))
+    np.testing.assert_array_equal(array.data.b, np.array([3, 4]))
+    self.assertEqual(array.shape, (2,))
+    self.assertIsNone(array.dtype)
+
+    def is_duck_identity(x):
+      self.assertIsInstance(x, Duck)
+      return x
+
+    result = named_axes.nmap(is_duck_identity)(array)
+    chex.assert_trees_all_equal(result, array)
+
+    expected = named_axes.NamedArray(duck + 2)
+    actual = array + 2
+    chex.assert_trees_all_equal(actual, expected)
+
+    actual = jax.jit(named_axes.nmap(lambda x: x + 2))(array)
+    chex.assert_trees_all_equal(actual, expected)
+
+    array_2d = jax.tree.map(lambda x: x[jnp.newaxis, :], array).tag('x', 'y')
+    expected = named_axes.NamedArray(
+        Duck(a=np.array([[1], [2]]), b=np.array([[3], [4]])), dims=('y', 'x')
+    )
+    actual = array_2d.order_as('y', 'x')
+    chex.assert_trees_all_equal(actual, expected)
 
 
 if __name__ == '__main__':

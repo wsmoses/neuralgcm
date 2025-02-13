@@ -22,6 +22,7 @@ Some code and documentation is adapted from penzai.core.named_axes.
 """
 from __future__ import annotations
 
+import abc
 import dataclasses
 import functools
 import operator
@@ -369,13 +370,14 @@ def _nmap_with_doc(
     ]
     result = vectorized_fun(leaf_data)
 
-    def wrap_output(data: jnp.ndarray) -> NamedArray:
+    def wrap_output(data: Array) -> NamedArray:
       dims = [None] * data.ndim
       for dim, axis in out_axes_dict.items():
         dims[axis] = dim
       return NamedArray(data, tuple(dims))
 
-    return jax.tree.map(wrap_output, result)
+    is_array = lambda x: isinstance(x, Array)
+    return jax.tree.map(wrap_output, result, is_leaf=is_array)
 
   docstr = (
       f'Dimension-vectorized version of `{fun_name}`. Takes similar arguments'
@@ -469,6 +471,35 @@ def _wrap_array_method(
   return wrapped_func
 
 
+class DuckArray(abc.ABC):
+  """Base class for non-jax.Array objects that can be used with Coordax."""
+
+  @property
+  @abc.abstractmethod
+  def shape(self) -> tuple[int, ...]:
+    ...
+
+  @property
+  @abc.abstractmethod
+  def size(self) -> int:
+    ...
+
+  @property
+  @abc.abstractmethod
+  def ndim(self) -> int:
+    ...
+
+  @abc.abstractmethod
+  def transpose(self, axes: tuple[int, ...]) -> Self:
+    ...
+
+  # TODO(shoyer): add __getitem__? We don't need it in coordax (currently) but
+  # it's hard to argue that you have a generic array class without it.
+
+
+Array = jax.Array | DuckArray
+
+
 _VALID_PYTREE_OPS = (
     'JAX pytree operations on NamedArray objects are only valid when they'
     ' insert new leading dimensions, or trim unnamed leading dimensions. The'
@@ -504,12 +535,12 @@ class NamedArray:
       axes.
   """
 
-  _data: jnp.ndarray
+  _data: Array
   _dims: tuple[str | None, ...]
 
   def __init__(
       self,
-      data: jax.typing.ArrayLike,
+      data: jax.typing.ArrayLike | DuckArray,
       dims: tuple[str | None, ...] | None = None,
   ):
     """Construct a NamedArray.
@@ -521,7 +552,8 @@ class NamedArray:
         `None` indicates positional axes. If `dims` is not provided, all axes
         are positional.
     """
-    data = jnp.asarray(data)
+    if not isinstance(data, DuckArray):
+      data = jnp.asarray(data)
     if dims is None:
       dims = (None,) * data.ndim
     else:
@@ -534,7 +566,7 @@ class NamedArray:
     self._dims = dims
 
   @property
-  def data(self) -> jnp.ndarray:
+  def data(self) -> Array:
     """Data associated with this array."""
     return self._data
 
@@ -576,9 +608,10 @@ class NamedArray:
     return _named_shape(self.dims, self.data.shape)
 
   @property
-  def dtype(self) -> jnp.dtype:
+  def dtype(self) -> jnp.dtype | None:
     """The dtype of the underlying data array."""
-    return self.data.dtype
+    data = self.data
+    return data.dtype if isinstance(data, jax.Array) else None
 
   def __treescope_repr__(self, path: str | None, subtree_renderer: Any):
     """Treescope handler."""
@@ -616,7 +649,7 @@ class NamedArray:
     return [data], (self.dims, self.shape)
 
   @classmethod
-  def tree_unflatten(cls, treedef, leaves: list[jax.Array | object]) -> Self:
+  def tree_unflatten(cls, treedef, leaves: list[Array | object]) -> Self:
     """Unflatten this object for JAX pytree operations."""
     dims, shape = treedef
     [data] = leaves
@@ -625,7 +658,7 @@ class NamedArray:
     if isinstance(data, np.ndarray):
       data = jnp.asarray(data)
 
-    if not isinstance(data, jnp.ndarray):
+    if not isinstance(data, Array):
       # JAX builds pytrees with non-ndarray leaves inside some transformations,
       # such as vmap, for handling the in_axes argument. We wrap these leaves
       # with _ShapedLeaf to ensure that they produce the same treedef when
@@ -649,10 +682,10 @@ class NamedArray:
 
   @classmethod
   def _new_with_padded_or_trimmed_dims(
-      cls, data: jnp.ndarray, dims: tuple[str | None, ...]
+      cls, data: Array, dims: tuple[str | None, ...]
   ) -> Self:
     """Create a new NamedArray, padding or trimming dims to match data.ndim."""
-    assert isinstance(data, jnp.ndarray)
+    assert isinstance(data, Array)
     if len(dims) <= data.ndim:
       dims = (None,) * (data.ndim - len(dims)) + dims
     else:

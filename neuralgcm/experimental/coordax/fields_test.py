@@ -11,7 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import dataclasses
 import functools
+import math
 import operator
 import textwrap
 
@@ -400,6 +402,62 @@ class FieldTest(parameterized.TestCase):
 
     untagged = coordax.untag(tagged, 'x', 'y')
     jax.tree.map(np.testing.assert_array_equal, untagged, inputs)
+
+  def test_duckarray(self):
+
+    @jax.tree_util.register_dataclass
+    @dataclasses.dataclass
+    class Duck(coordax.DuckArray):
+      a: jnp.ndarray
+      b: jnp.ndarray
+
+      @property
+      def shape(self) -> tuple[int, ...]:
+        return self.a.shape
+
+      @property
+      def size(self) -> int:
+        return math.prod(self.a.shape)
+
+      @property
+      def ndim(self) -> int:
+        return len(self.a.shape)
+
+      def transpose(self, axes: tuple[int, ...]):
+        return Duck(self.a.transpose(axes), self.b.transpose(axes))
+
+      def __add__(self, other: int):
+        # intentionally implement something funny, that is not equal to
+        # jax.tree.map(jnp.add, self, other)
+        return Duck(self.a * other, self.b * other)
+
+    duck = Duck(a=np.array([1, 2]), b=np.array([3, 4]))
+    field = coordax.Field(duck)
+    np.testing.assert_array_equal(field.data.a, np.array([1, 2]))
+    np.testing.assert_array_equal(field.data.b, np.array([3, 4]))
+    self.assertEqual(field.shape, (2,))
+    self.assertIsNone(field.dtype)
+
+    def is_duck_identity(x):
+      self.assertIsInstance(x, Duck)
+      return x
+
+    result = coordax.cmap(is_duck_identity)(field)
+    testing.assert_fields_equal(result, field)
+
+    expected = coordax.Field(duck + 2)
+    actual = field + 2
+    testing.assert_fields_equal(actual, expected)
+
+    actual = jax.jit(coordax.cmap(lambda x: x + 2))(field)
+    testing.assert_fields_equal(actual, expected)
+
+    array_2d = jax.tree.map(lambda x: x[jnp.newaxis, :], field).tag('x', 'y')
+    expected = coordax.Field(
+        Duck(a=np.array([[1], [2]]), b=np.array([[3], [4]])), dims=('y', 'x')
+    )
+    actual = array_2d.order_as('y', 'x')
+    testing.assert_fields_equal(actual, expected)
 
 
 if __name__ == '__main__':

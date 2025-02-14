@@ -61,6 +61,9 @@ class PytreeArray:
   def ndim(self) -> int:
     return len(self.shape)
 
+  def transpose(self, axes: tuple[int, ...]) -> PytreeArray:
+    return jax.tree.map(lambda x: x.transpose(axes), self)
+
   def __getitem__(self, index) -> Array:
     return jax.tree.map(lambda x: x[index], self)
 

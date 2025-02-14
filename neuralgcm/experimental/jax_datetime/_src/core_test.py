@@ -59,6 +59,14 @@ class TimedeltaTest(parameterized.TestCase):
     self.assertEqual(delta.ndim, 1)
     self.assertEqual(delta[1], jdt.Timedelta(days=1, seconds=1))
 
+  def test_transpose(self):
+    delta = jdt.Timedelta(days=jnp.array([[1, 2]]), seconds=jnp.array([[3, 4]]))
+    expected = jdt.Timedelta(
+        days=jnp.array([[1], [2]]), seconds=jnp.array([[3], [4]])
+    )
+    actual = delta.transpose((1, 0))
+    assert_tree_equal(actual, expected)
+
   def test_repr(self):
     delta = jdt.Timedelta(1, 2)
     self.assertEqual(repr(delta), 'jax_datetime.Timedelta(days=1, seconds=2)')

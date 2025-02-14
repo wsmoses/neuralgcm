@@ -15,14 +15,11 @@ import datetime
 
 from absl.testing import absltest
 from absl.testing import parameterized
+import chex
 import jax
 import jax.numpy as jnp
 import neuralgcm.experimental.jax_datetime as jdt
 import numpy as np
-
-
-def assert_tree_equal(actual, expected):
-  jax.tree.map(np.testing.assert_array_equal, actual, expected)
 
 
 class TimedeltaTest(parameterized.TestCase):
@@ -30,15 +27,15 @@ class TimedeltaTest(parameterized.TestCase):
   def test_constructor(self):
     actual = jdt.Timedelta()
     expected = jdt.Timedelta(0, 0)
-    assert_tree_equal(actual, expected)
+    chex.assert_trees_all_equal(actual, expected)
 
     actual = jdt.Timedelta(seconds=jnp.arange(3))
     expected = jdt.Timedelta(days=jnp.zeros(3, int), seconds=jnp.arange(3))
-    assert_tree_equal(actual, expected)
+    chex.assert_trees_all_equal(actual, expected)
 
     actual = jdt.Timedelta(days=jnp.arange(3))
     expected = jdt.Timedelta(days=jnp.arange(3), seconds=jnp.zeros(3, int))
-    assert_tree_equal(actual, expected)
+    chex.assert_trees_all_equal(actual, expected)
 
     with self.assertRaisesWithLiteralMatch(
         ValueError,
@@ -65,7 +62,7 @@ class TimedeltaTest(parameterized.TestCase):
         days=jnp.array([[1], [2]]), seconds=jnp.array([[3], [4]])
     )
     actual = delta.transpose((1, 0))
-    assert_tree_equal(actual, expected)
+    chex.assert_trees_all_equal(actual, expected)
 
   def test_repr(self):
     delta = jdt.Timedelta(1, 2)
@@ -74,33 +71,33 @@ class TimedeltaTest(parameterized.TestCase):
   def test_normalization(self):
     actual = jdt.Timedelta(0, 24 * 60 * 60)
     expected = jdt.Timedelta(1, 0)
-    assert_tree_equal(actual, expected)
+    chex.assert_trees_all_equal(actual, expected)
 
     actual = jdt.Timedelta(0, -1)
     expected = jdt.Timedelta(-1, 86399)
-    assert_tree_equal(actual, expected)
+    chex.assert_trees_all_equal(actual, expected)
 
   def test_from_timedelta64(self):
     expected = jdt.Timedelta(365, 0)
     actual = jdt.Timedelta.from_timedelta64(np.timedelta64(365, 'D'))
-    assert_tree_equal(actual, expected)
+    chex.assert_trees_all_equal(actual, expected)
 
     expected = jdt.Timedelta(days=1000 * 365, seconds=10)
     actual = jdt.Timedelta.from_timedelta64(
         np.timedelta64(1000 * 365, 'D') + np.timedelta64(10, 's')
     )
-    assert_tree_equal(actual, expected)
+    chex.assert_trees_all_equal(actual, expected)
 
     expected = jdt.Timedelta(seconds=60 * 60 * np.array([0, 1]))
     actual = jdt.Timedelta.from_timedelta64(
         np.array([0, 1], dtype='timedelta64[h]')
     )
-    assert_tree_equal(actual, expected)
+    chex.assert_trees_all_equal(actual, expected)
 
   def test_from_pytimedelta(self):
     expected = jdt.Timedelta(365, 0)
     actual = jdt.Timedelta.from_pytimedelta(datetime.timedelta(days=365))
-    assert_tree_equal(actual, expected)
+    chex.assert_trees_all_equal(actual, expected)
 
   def test_to_timedelta64(self):
     delta = jdt.Timedelta(365, 0)
@@ -129,68 +126,79 @@ class TimedeltaTest(parameterized.TestCase):
     delta = jdt.Timedelta(1, 12 * 60 * 60)
     actual = delta + delta
     expected = jdt.Timedelta(3, 0)
-    assert_tree_equal(actual, expected)
+    chex.assert_trees_all_equal(actual, expected)
 
     actual = delta + delta.to_pytimedelta()
-    assert_tree_equal(actual, expected)
+    chex.assert_trees_all_equal(actual, expected)
+
+    actual = delta + delta.to_timedelta64()
+    chex.assert_trees_all_equal(actual, expected)
 
     with self.assertRaises(TypeError):
       expected + 60
 
+    with self.assertRaisesWithLiteralMatch(
+        TypeError,
+        'arithmetic between jax_datetime.Timedelta and np.ndarray objects is'
+        ' not yet supported. Use jdt.to_datetime() or jdt.to_timedelta() to'
+        ' explicitly cast the NumPy array to a Datetime or Timedelta.',
+    ):
+      delta + np.array(delta.to_timedelta64())
+
   def test_positive(self):
     delta = jdt.Timedelta(1, 6 * 60 * 60)
     actual = +delta
-    assert_tree_equal(actual, delta)
+    chex.assert_trees_all_equal(actual, delta)
 
   def test_negation(self):
     delta = jdt.Timedelta(1, 6 * 60 * 60)
     actual = -delta
     expected = jdt.Timedelta(-2, 18 * 60 * 60)
-    assert_tree_equal(actual, expected)
+    chex.assert_trees_all_equal(actual, expected)
 
     delta = jdt.Timedelta(-1, 6 * 60 * 60)
     actual = -delta
     expected = jdt.Timedelta(0, 18 * 60 * 60)
-    assert_tree_equal(actual, expected)
+    chex.assert_trees_all_equal(actual, expected)
 
   def test_absolute(self):
     delta = jdt.Timedelta(1, 6 * 60 * 60)
     actual = abs(delta)
     expected = jdt.Timedelta(1, 6 * 60 * 60)
-    assert_tree_equal(actual, expected)
+    chex.assert_trees_all_equal(actual, expected)
 
     delta = jdt.Timedelta(-1, 6 * 60 * 60)
     actual = abs(delta)
     expected = jdt.Timedelta(0, 18 * 60 * 60)
-    assert_tree_equal(actual, expected)
+    chex.assert_trees_all_equal(actual, expected)
 
   def test_subtraction(self):
     delta = jdt.Timedelta(1, 12 * 60 * 60)
     actual = delta - delta
     expected = jdt.Timedelta(0, 0)
-    assert_tree_equal(actual, expected)
+    chex.assert_trees_all_equal(actual, expected)
 
     actual = delta - delta.to_pytimedelta()
-    assert_tree_equal(actual, expected)
+    chex.assert_trees_all_equal(actual, expected)
 
   def test_multiplication_by_integer(self):
     delta = jdt.Timedelta(1, 12 * 60 * 60)
     expected = jdt.Timedelta(3, 0)
 
     actual = delta * 2
-    assert_tree_equal(actual, expected)
+    chex.assert_trees_all_equal(actual, expected)
 
     actual = 2 * delta
-    assert_tree_equal(actual, expected)
+    chex.assert_trees_all_equal(actual, expected)
 
     actual = delta * True
-    assert_tree_equal(actual, delta)
+    chex.assert_trees_all_equal(actual, delta)
 
   def test_multiplication_by_float(self):
     delta = jdt.Timedelta(1)
     expected = jdt.Timedelta(2, 12 * 60 * 60)
     actual = delta * 2.5
-    assert_tree_equal(actual, expected)
+    chex.assert_trees_all_equal(actual, expected)
 
   def test_multiplication_type_error(self):
     delta = jdt.Timedelta()
@@ -200,11 +208,11 @@ class TimedeltaTest(parameterized.TestCase):
   def test_division_with_numeric(self):
     actual = jdt.Timedelta(days=2) / 4
     expected = jdt.Timedelta(seconds=12 * 60 * 60)
-    assert_tree_equal(actual, expected)
+    chex.assert_trees_all_equal(actual, expected)
 
     actual = jdt.Timedelta(days=4, seconds=-1) / 4
     expected = jdt.Timedelta(days=1)  # rounded to the nearest second
-    assert_tree_equal(actual, expected)
+    chex.assert_trees_all_equal(actual, expected)
 
     actual = jdt.Timedelta(days=6, seconds=59) / 4
     expected = jdt.Timedelta(days=1, seconds=12 * 60 * 60 + 15)
@@ -216,7 +224,7 @@ class TimedeltaTest(parameterized.TestCase):
 
     actual = jdt.Timedelta(days=4, seconds=-1) // 4
     expected = jdt.Timedelta(days=1, seconds=-1)  # rounded down
-    assert_tree_equal(actual, expected)
+    chex.assert_trees_all_equal(actual, expected)
 
     with self.assertRaises(TypeError):
       jdt.Timedelta(days=4) // 4.0  # floor division by a float is not supported
@@ -224,29 +232,29 @@ class TimedeltaTest(parameterized.TestCase):
   def test_division_with_timedelta(self):
     actual = jdt.Timedelta(days=2) / jdt.Timedelta(seconds=12 * 60 * 60)
     expected = 4
-    assert_tree_equal(actual, expected)
+    chex.assert_trees_all_equal(actual, expected)
 
     actual = jdt.Timedelta(days=3) / jdt.Timedelta(days=2)
     expected = 1.5
-    assert_tree_equal(actual, expected)
+    chex.assert_trees_all_equal(actual, expected)
 
     actual = jdt.Timedelta(days=3) // jdt.Timedelta(days=2)
     expected = 1
-    assert_tree_equal(actual, expected)
+    chex.assert_trees_all_equal(actual, expected)
 
     actual = jdt.Timedelta(days=68 * 365) // jdt.Timedelta(days=365)
     expected = 68
-    assert_tree_equal(actual, expected)
+    chex.assert_trees_all_equal(actual, expected)
 
     # needs integer path
     actual = jdt.Timedelta(days=68 * 365, seconds=1) // jdt.Timedelta(seconds=1)
     expected = 68 * 365 * 24 * 60 * 60 + 1
-    assert_tree_equal(actual, expected)
+    chex.assert_trees_all_equal(actual, expected)
 
     # needs float path
     actual = jdt.Timedelta(days=1_000_000 * 365) // jdt.Timedelta(days=365)
     expected = 1_000_000
-    assert_tree_equal(actual, expected)
+    chex.assert_trees_all_equal(actual, expected)
 
   def test_comparison_scalar(self):
     self.assertTrue(jdt.Timedelta(1, 0) == jdt.Timedelta(1, 0))
@@ -323,7 +331,7 @@ class TimedeltaTest(parameterized.TestCase):
   def test_to_timedelta_unit(self, value, unit):
     expected = jdt.Timedelta(days=1)
     actual = jdt.to_timedelta(value, unit)
-    assert_tree_equal(actual, expected)
+    chex.assert_trees_all_equal(actual, expected)
 
   def test_to_timedelta_unit_invalid(self):
     with self.assertRaisesWithLiteralMatch(
@@ -361,23 +369,23 @@ class DatetimeTest(parameterized.TestCase):
   def test_from_datetime64(self):
     expected = jdt.Datetime(jdt.Timedelta(365, 0))
     actual = jdt.Datetime.from_datetime64(np.datetime64('1971-01-01'))
-    assert_tree_equal(expected, actual)
+    chex.assert_trees_all_equal(expected, actual)
 
     expected = jdt.Datetime(jdt.Timedelta(days=np.array([0, 1])))
     actual = jdt.Datetime.from_datetime64(
         np.array(['1970-01-01', '1970-01-02'], dtype='datetime64[D]')
     )
-    assert_tree_equal(expected, actual)
+    chex.assert_trees_all_equal(expected, actual)
 
   def test_from_pydatetime(self):
     expected = jdt.Datetime(jdt.Timedelta(365, 0))
     actual = jdt.Datetime.from_pydatetime(datetime.datetime(1971, 1, 1))
-    assert_tree_equal(actual, expected)
+    chex.assert_trees_all_equal(actual, expected)
 
   def test_from_isoformat(self):
     expected = jdt.Datetime(jdt.Timedelta(365, 0))
     actual = jdt.Datetime.from_isoformat('1971-01-01')
-    assert_tree_equal(actual, expected)
+    chex.assert_trees_all_equal(actual, expected)
 
   def test_to_datetime64(self):
     time = jdt.Datetime(jdt.Timedelta(365, 0))
@@ -406,19 +414,34 @@ class DatetimeTest(parameterized.TestCase):
     expected = jdt.Datetime(delta * 2)
 
     actual = time + delta
-    assert_tree_equal(actual, expected)
+    chex.assert_trees_all_equal(actual, expected)
 
     actual = time + delta.to_pytimedelta()
-    assert_tree_equal(actual, expected)
+    chex.assert_trees_all_equal(actual, expected)
+
+    actual = time + delta.to_timedelta64()
+    chex.assert_trees_all_equal(actual, expected)
+
+    actual = time + np.array(delta.to_timedelta64())
+    chex.assert_trees_all_equal(actual, expected)
 
     actual = delta + time
-    assert_tree_equal(actual, expected)
+    chex.assert_trees_all_equal(actual, expected)
 
-    actual = delta + time.to_pydatetime()
-    assert_tree_equal(actual, expected)
+    actual = delta.to_pytimedelta() + time
+    chex.assert_trees_all_equal(actual, expected)
+
+    actual = delta.to_timedelta64() + time
+    chex.assert_trees_all_equal(actual, expected)
+
+    actual = np.array(delta.to_timedelta64()) + time
+    chex.assert_trees_all_equal(actual, expected)
 
     with self.assertRaises(TypeError):
       time + 1
+
+    with self.assertRaises(TypeError):
+      1 + time
 
     with self.assertRaises(TypeError):
       time + time
@@ -429,24 +452,42 @@ class DatetimeTest(parameterized.TestCase):
     delta = jdt.Timedelta(365, 0)
 
     actual = first - delta
-    assert_tree_equal(actual, second)
+    chex.assert_trees_all_equal(actual, second)
     actual = first - delta.to_pytimedelta()
-    assert_tree_equal(actual, second)
+    chex.assert_trees_all_equal(actual, second)
+    actual = first - delta.to_timedelta64()
+    chex.assert_trees_all_equal(actual, second)
 
     actual = -delta + first
-    assert_tree_equal(actual, second)
+    chex.assert_trees_all_equal(actual, second)
     actual = -delta.to_pytimedelta() + first
-    assert_tree_equal(actual, second)
+    chex.assert_trees_all_equal(actual, second)
+    actual = -delta.to_timedelta64() + first
+    chex.assert_trees_all_equal(actual, second)
 
     actual = first - second
-    assert_tree_equal(actual, delta)
+    chex.assert_trees_all_equal(actual, delta)
     actual = first - second.to_pydatetime()
-    assert_tree_equal(actual, delta)
+    chex.assert_trees_all_equal(actual, delta)
+    actual = first - second.to_datetime64()
+    chex.assert_trees_all_equal(actual, delta)
 
     actual = second - first
-    assert_tree_equal(actual, -delta)
+    chex.assert_trees_all_equal(actual, -delta)
     actual = second.to_pydatetime() - first
-    assert_tree_equal(actual, -delta)
+    chex.assert_trees_all_equal(actual, -delta)
+    actual = second.to_datetime64() - first
+    chex.assert_trees_all_equal(actual, -delta)
+    actual = np.array(second.to_datetime64()) - first
+    chex.assert_trees_all_equal(actual, -delta)
+
+    with self.assertRaisesWithLiteralMatch(
+        TypeError,
+        'arithmetic between jax_datetime.Datetime and np.ndarray objects is not'
+        ' yet supported. Use jdt.to_datetime() or jdt.to_timedelta() to'
+        ' explicitly cast the NumPy array to a Datetime or Timedelta.',
+    ):
+      first - np.array(second.to_datetime64())
 
   def test_comparison_scalar(self):
     first = jdt.Datetime.from_isoformat('2020-01-01T00')
@@ -484,7 +525,7 @@ class DatetimeTest(parameterized.TestCase):
     )
     result = jax.vmap(lambda x: x)(stamp)
     self.assertIsInstance(result, jdt.Datetime)
-    assert_tree_equal(result, stamp)
+    chex.assert_trees_all_equal(result, stamp)
 
   @parameterized.parameters(
       {'value': jdt.Datetime.from_isoformat('2000-01-01')},
@@ -496,7 +537,7 @@ class DatetimeTest(parameterized.TestCase):
   def test_to_datetime(self, value):
     expected = jdt.Datetime.from_isoformat('2000-01-01')
     actual = jdt.to_datetime(value)
-    assert_tree_equal(actual, expected)
+    chex.assert_trees_all_equal(actual, expected)
 
 
 if __name__ == '__main__':

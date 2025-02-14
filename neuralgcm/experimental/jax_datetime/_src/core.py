@@ -18,7 +18,7 @@ import datetime
 import functools
 import math
 import operator
-from typing import Any, TypeVar, overload
+from typing import overload
 
 import jax
 import jax.numpy as jnp
@@ -66,6 +66,9 @@ class PytreeArray:
 
   def __getitem__(self, index) -> Array:
     return jax.tree.map(lambda x: x[index], self)
+
+  # Take precedence over numpy arrays in binary arithmetic.
+  __array_priority__ = 100
 
 
 def _as_integer_array(x: Integer, name: str) -> jnp.ndarray:
@@ -201,7 +204,7 @@ class Timedelta(PytreeArray):
   def from_pytimedelta(cls, values: datetime.timedelta) -> Timedelta:
     return cls(values.days, values.seconds)
 
-  def to_timedelta64(self) -> np.ndarray:
+  def to_timedelta64(self) -> np.timedelta64 | np.ndarray:
     seconds = np.int64(self.days) * _SECONDS_PER_DAY + np.int64(self.seconds)
     return seconds.astype(dtype='timedelta64[s]')
 
@@ -229,7 +232,6 @@ class Timedelta(PytreeArray):
   def __add__(
       self, other: TimedeltaLike | DatetimeLike
   ) -> Timedelta | Datetime:
-    # TODO(shoyer): consider handling np.ndarray objects
     if isinstance(other, DatetimeLike):
       other = to_datetime(other)
       return other + self
@@ -238,6 +240,14 @@ class Timedelta(PytreeArray):
       days = self.days + other.days
       seconds = self.seconds + other.seconds
       return Timedelta(days, seconds)  # type: ignore
+    elif isinstance(other, np.ndarray):
+      # TODO(shoyer): consider handling np.ndarray objects. This is tricky to
+      # type check because the correct return type depends on the array dtype.
+      raise TypeError(
+          'arithmetic between jax_datetime.Timedelta and np.ndarray objects is'
+          ' not yet supported. Use jdt.to_datetime() or jdt.to_timedelta() to'
+          ' explicitly cast the NumPy array to a Datetime or Timedelta.'
+      )
     else:
       return NotImplemented  # type: ignore
 
@@ -446,15 +456,14 @@ class Datetime(PytreeArray):
   def from_isoformat(cls, value: str) -> Datetime:
     return cls.from_pydatetime(datetime.datetime.fromisoformat(value))
 
-  def to_datetime64(self) -> np.ndarray:
+  def to_datetime64(self) -> np.datetime64 | np.ndarray:
     return self.delta.to_timedelta64() + _NUMPY_UNIX_EPOCH
 
   def to_pydatetime(self) -> datetime.datetime:
     return self.delta.to_pytimedelta() + _PY_UNIX_EPOCH
 
-  def __add__(self, other: TimedeltaLike) -> Datetime:
-    # TODO(shoyer): consider handling timedelta64 np.ndarray objects
-    if not isinstance(other, TimedeltaLike):
+  def __add__(self, other: TimedeltaLike | np.ndarray) -> Datetime:
+    if not isinstance(other, TimedeltaLike | np.ndarray):
       return NotImplemented  # type: ignore
     other = to_timedelta(other)
     return Datetime(self.delta + other)  # type: ignore
@@ -472,19 +481,26 @@ class Datetime(PytreeArray):
   def __sub__(
       self, other: TimedeltaLike | DatetimeLike
   ) -> Timedelta | Datetime:
-    # TODO(shoyer): consider handling np.ndarray objects
     if isinstance(other, DatetimeLike):
       other = to_datetime(other)
       return self.delta - other.delta
     elif isinstance(other, TimedeltaLike):
       other = to_timedelta(other)
       return Datetime(self.delta - other)  # type: ignore
+    elif isinstance(other, np.ndarray):
+      # TODO(shoyer): consider handling np.ndarray objects. This is tricky to
+      # type check because the correct return type depends on the array dtype.
+      raise TypeError(
+          'arithmetic between jax_datetime.Datetime and np.ndarray objects is'
+          ' not yet supported. Use jdt.to_datetime() or jdt.to_timedelta() to'
+          ' explicitly cast the NumPy array to a Datetime or Timedelta.'
+      )
     else:
       return NotImplemented  # type: ignore
 
-  def __rsub__(self, other: DatetimeLike) -> Timedelta:
+  def __rsub__(self, other: DatetimeLike | np.ndarray) -> Timedelta:
     # TODO(shoyer): consider handling datetime64 np.ndarray objects
-    if isinstance(other, DatetimeLike):
+    if isinstance(other, DatetimeLike | np.ndarray):
       other = to_datetime(other)
       return other.delta - self.delta
     else:

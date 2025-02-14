@@ -34,6 +34,7 @@ from neuralgcm.experimental.coordax.fields import (
     tag as tag,
     untag as untag,
 )
-from neuralgcm.experimental.coordax.named_axes import (
-    DuckArray as DuckArray,
+from neuralgcm.experimental.coordax.ndarrays import (
+    NDArray as NDArray,
+    register_ndarray as register_ndarray,
 )

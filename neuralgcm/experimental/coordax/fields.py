@@ -30,6 +30,7 @@ import jax
 import jax.numpy as jnp
 from neuralgcm.experimental.coordax import coordinate_systems
 from neuralgcm.experimental.coordax import named_axes
+from neuralgcm.experimental.coordax import ndarrays
 from neuralgcm.experimental.coordax import utils
 import numpy as np
 from treescope import lowering
@@ -44,7 +45,7 @@ Sequence = collections.abc.Sequence
 T = TypeVar('T')
 Coordinate = coordinate_systems.Coordinate
 
-Array = jax.Array | named_axes.DuckArray
+Array = jax.Array | ndarrays.NDArray
 
 
 def _dimension_names(*names: str | Coordinate) -> tuple[str, ...]:
@@ -324,7 +325,7 @@ class Field:
     return field.tag(*coords)
 
   def to_xarray(self) -> xarray.DataArray:
-    """Convert this Field to an xarray.DataArray.
+    """Convert this Field to an xarray.DataArray with NumPy array data.
 
     Returns:
       An xarray.DataArray object with the same data as the input coordax.Field.
@@ -337,6 +338,10 @@ class Field:
           f'xarray.DataArray objects, got dimensions {self.dims!r}'
       )
 
+    # TODO(shoyer): Consider making this conversion optional, for use cases
+    # where it is desirable to wrap jax.Array objects inside Xarray.
+    data = ndarrays.to_numpy_array(self.data)
+
     coords = {}
     for coord in self.coords.values():
       for name, variable in coord.to_xarray().items():
@@ -347,7 +352,7 @@ class Field:
           )
         coords[name] = variable
 
-    return xarray.DataArray(data=self.data, dims=self.dims, coords=coords)
+    return xarray.DataArray(data=data, dims=self.dims, coords=coords)
 
   @property
   def named_array(self) -> named_axes.NamedArray:

@@ -23,6 +23,7 @@ import chex
 import jax
 import jax.numpy as jnp
 from neuralgcm.experimental import coordax
+from neuralgcm.experimental.coordax import ndarrays
 from neuralgcm.experimental.coordax import testing
 import numpy as np
 
@@ -407,7 +408,7 @@ class FieldTest(parameterized.TestCase):
 
     @jax.tree_util.register_dataclass
     @dataclasses.dataclass
-    class Duck(coordax.DuckArray):
+    class Duck(ndarrays.NDArray):
       a: jnp.ndarray
       b: jnp.ndarray
 

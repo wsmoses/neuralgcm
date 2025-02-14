@@ -22,7 +22,6 @@ Some code and documentation is adapted from penzai.core.named_axes.
 """
 from __future__ import annotations
 
-import abc
 import dataclasses
 import functools
 import operator
@@ -32,6 +31,7 @@ from typing import Any, Callable, Self, TypeGuard, TypeVar
 
 import jax
 import jax.numpy as jnp
+from neuralgcm.experimental.coordax import ndarrays
 import numpy as np
 from treescope import dtype_util
 from treescope import lowering
@@ -471,41 +471,7 @@ def _wrap_array_method(
   return wrapped_func
 
 
-class DuckArray(abc.ABC):
-  """Base class for non-jax.Array objects that can be used with Coordax.
-
-  To register a new duck-typed array, either inherit from this class or use
-  `coordax.DuckArray.register()`.
-  """
-
-  @property
-  @abc.abstractmethod
-  def shape(self) -> tuple[int, ...]:
-    """Shape of this array."""
-
-  @property
-  @abc.abstractmethod
-  def size(self) -> int:
-    """Size of this array, typically `math.prod(self.shape)`."""
-
-  @property
-  @abc.abstractmethod
-  def ndim(self) -> int:
-    """Number of dimensions in this array, typcially `len(self.shape)`."""
-
-  @abc.abstractmethod
-  def transpose(self, axes: tuple[int, ...]) -> Self:
-    """Transpose this array to this given axis order."""
-
-  # Note: __getitem__ is not yet used by Coordax, but we will likely want it in
-  # the near the future.
-  # TODO(shoyer): Figure out the precise type for `value`.
-  @abc.abstractmethod
-  def __getitem__(self, value) -> Self:
-    """Index this array, returning a new array."""
-
-
-Array = jax.Array | DuckArray
+Array = jax.Array | ndarrays.NDArray
 
 
 _VALID_PYTREE_OPS = (
@@ -548,7 +514,7 @@ class NamedArray:
 
   def __init__(
       self,
-      data: jax.typing.ArrayLike | DuckArray,
+      data: jax.typing.ArrayLike | ndarrays.NDArray,
       dims: tuple[str | None, ...] | None = None,
   ):
     """Construct a NamedArray.
@@ -560,15 +526,7 @@ class NamedArray:
         `None` indicates positional axes. If `dims` is not provided, all axes
         are positional.
     """
-    if not isinstance(data, DuckArray):
-      try:
-        data = jnp.asarray(data)
-      except TypeError as e:
-        raise TypeError(
-            'data must be a jax.Array or a duck-typed array registered with '
-            f'coordax.DuckArray.register(), got {type(data).__name__}: {data}'
-        ) from e
-
+    data = ndarrays.to_ndarray(data)
     if dims is None:
       dims = (None,) * data.ndim
     else:

@@ -2,8 +2,6 @@
 
 from typing import Mapping
 
-import functools
-
 import chex
 import jax
 from neuralgcm.experimental import coordax
@@ -12,7 +10,7 @@ import numpy as np
 
 def assert_field_properties(
     actual: coordax.Field,
-    data: np.ndarray | jax.Array | coordax.DuckArray | None = None,
+    data: np.ndarray | jax.Array | coordax.NDArray | None = None,
     dims: tuple[str, ...] | None = None,
     shape: tuple[int, ...] | None = None,
     coords: Mapping[str, coordax.Coordinate] | None = None,

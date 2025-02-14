@@ -21,6 +21,7 @@ import chex
 import jax
 import jax.numpy as jnp
 from neuralgcm.experimental.coordax import named_axes
+from neuralgcm.experimental.coordax import ndarrays
 import numpy as np
 import treescope
 
@@ -74,7 +75,7 @@ class NamedAxesTest(absltest.TestCase):
     with self.assertRaisesWithLiteralMatch(
         TypeError,
         'data must be a jax.Array or a duck-typed array registered with'
-        ' coordax.DuckArray.register(), got dict: {}',
+        ' coordax.register_ndarray(), got dict: {}',
     ):
       named_axes.NamedArray({})
     with self.assertRaisesRegex(
@@ -737,7 +738,7 @@ class NamedAxesTest(absltest.TestCase):
 
     @jax.tree_util.register_dataclass
     @dataclasses.dataclass
-    class Duck(named_axes.DuckArray):
+    class Duck(ndarrays.NDArray):
       a: jnp.ndarray
       b: jnp.ndarray
 

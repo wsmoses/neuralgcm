@@ -857,6 +857,10 @@ class SigmaLevels(cx.Coordinate):
   def fields(self):
     return {'sigma': cx.wrap(self.sigma_levels.centers, self)}
 
+  @property
+  def centers(self):
+    return self.sigma_levels.centers
+
   def asdict(self) -> dict[str, Any]:
     return {k: v.tolist() for k, v in dataclasses.asdict(self).items()}
 
@@ -1051,10 +1055,11 @@ class LayerLevels(cx.Coordinate):
   """Coordinates that discretize data by index of unstructured layer."""
 
   n_layers: int
+  name: str = 'layer_index'
 
   @property
   def dims(self):
-    return ('layer_index',)
+    return (self.name,)
 
   @property
   def shape(self) -> tuple[int, ...]:
@@ -1062,7 +1067,7 @@ class LayerLevels(cx.Coordinate):
 
   @property
   def fields(self):
-    return {'layer_index': cx.wrap(np.arange(self.n_layers), self)}
+    return {self.name: cx.wrap(np.arange(self.n_layers), self)}
 
   @classmethod
   def from_xarray(

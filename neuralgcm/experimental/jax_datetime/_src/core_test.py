@@ -77,6 +77,11 @@ class TimedeltaTest(parameterized.TestCase):
     expected = jdt.Timedelta(-1, 86399)
     chex.assert_trees_all_equal(actual, expected)
 
+  def test_from_normalized(self):
+    expected = jdt.Timedelta(365, 60)
+    actual = jdt.Timedelta.from_normalized(365, 60)
+    chex.assert_trees_all_equal(actual, expected)
+
   def test_from_timedelta64(self):
     expected = jdt.Timedelta(365, 0)
     actual = jdt.Timedelta.from_timedelta64(np.timedelta64(365, 'D'))

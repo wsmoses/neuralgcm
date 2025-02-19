@@ -100,6 +100,40 @@ class ModalOrography(nnx.Module):
     self.orography.value = modal_orography[self.grid.ylm_grid.mask]
 
 
+class ModalOrographyWithCorrection(ModalOrography):
+  """ModalOrography module with learned correction in modal representation."""
+
+  def __init__(
+      self,
+      *,
+      grid: coordinates.SphericalHarmonicGrid,
+      initializer: nnx.initializers.Initializer = nnx.initializers.zeros_init(),
+      correction_scale: float,
+      correction_param_type: nnx.Param = nnx.Param,
+      correction_initializer: nnx.initializers.Initializer = (
+          nnx.initializers.truncated_normal()
+      ),
+      mesh: parallelism.Mesh,
+      rngs: nnx.Rngs,
+  ):
+    super().__init__(grid=grid, initializer=initializer, mesh=mesh, rngs=rngs)
+    self.correction_scale = correction_scale
+    self.correction = correction_param_type(
+        correction_initializer(rngs.params(), self.orography.shape)
+    )
+
+  @property
+  def modal_orography(self) -> typing.Array:
+    """Returns orography converted to modal representation with filtering."""
+    ylm_grid = self.opt_grid.ylm_grid
+    mask = ylm_grid.mask
+    modal_orography_2d = jnp.zeros(ylm_grid.modal_shape)
+    modal_orography_1d = (
+        self.orography.value + self.correction.value * self.correction_scale
+    )
+    return modal_orography_2d.at[mask].set(modal_orography_1d)
+
+
 class Orography(nnx.Module):
   """Orography module that provides elevation in real space."""
 

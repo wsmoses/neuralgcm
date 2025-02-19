@@ -41,7 +41,8 @@ from treescope.external import jax_support
 
 
 def attrs_summary_type(
-    named_array: NamedArray, inspect_data: bool,
+    named_array: NamedArray,
+    inspect_data: bool,
 ) -> tuple[str, str, str]:
   """Returns a summary of a `named_array` and its data type."""
   if isinstance(named_array.data, jax.Array) and not isinstance(
@@ -62,9 +63,7 @@ def attrs_summary_type(
       and isinstance(named_array.data, jax.Array)
       and jax_support.safe_to_summarize(named_array.data)
   ):
-    summary_parts.append(
-        jax_support.summarize_array_data(named_array.data)
-    )
+    summary_parts.append(jax_support.summarize_array_data(named_array.data))
   attrs = ' '.join(attrs_parts)
   summary = ','.join(summary_parts)
   return attrs, summary, contained_type
@@ -588,6 +587,7 @@ class NamedArray:
 
   def __treescope_repr__(self, path: str | None, subtree_renderer: Any):
     """Treescope handler."""
+
     def _make_label():
       attrs, summary, contained_type = attrs_summary_type(self, False)
       return rendering_parts.text(
@@ -631,7 +631,10 @@ class NamedArray:
     if isinstance(data, np.ndarray):
       data = jnp.asarray(data)
 
-    if not isinstance(data, Array):
+    if not all(
+        isinstance(x, Array)
+        for x in jax.tree.leaves(data, is_leaf=lambda y: y is None)
+    ):
       # JAX builds pytrees with non-ndarray leaves inside some transformations,
       # such as vmap, for handling the in_axes argument. We wrap these leaves
       # with _ShapedLeaf to ensure that they produce the same treedef when

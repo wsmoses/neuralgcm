@@ -765,10 +765,10 @@ class NamedAxesTest(absltest.TestCase):
         # jax.tree.map(jnp.add, self, other)
         return Duck(self.a * other, self.b * other)
 
-    duck = Duck(a=np.array([1, 2]), b=np.array([3, 4]))
+    duck = Duck(a=jnp.array([1, 2]), b=jnp.array([3, 4]))
     array = named_axes.NamedArray(duck)
-    np.testing.assert_array_equal(array.data.a, np.array([1, 2]))
-    np.testing.assert_array_equal(array.data.b, np.array([3, 4]))
+    np.testing.assert_array_equal(array.data.a, jnp.array([1, 2]))
+    np.testing.assert_array_equal(array.data.b, jnp.array([3, 4]))
     self.assertEqual(array.shape, (2,))
     self.assertIsNone(array.dtype)
 
@@ -788,9 +788,17 @@ class NamedAxesTest(absltest.TestCase):
 
     array_2d = jax.tree.map(lambda x: x[jnp.newaxis, :], array).tag('x', 'y')
     expected = named_axes.NamedArray(
-        Duck(a=np.array([[1], [2]]), b=np.array([[3], [4]])), dims=('y', 'x')
+        Duck(a=jnp.array([[1], [2]]), b=jnp.array([[3], [4]])), dims=('y', 'x')
     )
     actual = array_2d.order_as('y', 'x')
+    chex.assert_trees_all_equal(actual, expected)
+
+    array_3d = jax.tree.map(lambda x: x[jnp.newaxis, ...], array_2d)
+    actual = jax.vmap(lambda x: x.order_as('y', 'x'))(array_3d).tag('z')
+    expected = named_axes.NamedArray(
+        Duck(a=jnp.array([[[1], [2]]]), b=jnp.array([[[3], [4]]])),
+        dims=('z', 'y', 'x'),
+    )
     chex.assert_trees_all_equal(actual, expected)
 
 

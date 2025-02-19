@@ -435,10 +435,10 @@ class FieldTest(parameterized.TestCase):
         # jax.tree.map(jnp.add, self, other)
         return Duck(self.a * other, self.b * other)
 
-    duck = Duck(a=np.array([1, 2]), b=np.array([3, 4]))
+    duck = Duck(a=jnp.array([1, 2]), b=jnp.array([3, 4]))
     field = coordax.Field(duck)
-    np.testing.assert_array_equal(field.data.a, np.array([1, 2]))
-    np.testing.assert_array_equal(field.data.b, np.array([3, 4]))
+    np.testing.assert_array_equal(field.data.a, jnp.array([1, 2]))
+    np.testing.assert_array_equal(field.data.b, jnp.array([3, 4]))
     self.assertEqual(field.shape, (2,))
     self.assertIsNone(field.dtype)
 
@@ -458,9 +458,17 @@ class FieldTest(parameterized.TestCase):
 
     array_2d = jax.tree.map(lambda x: x[jnp.newaxis, :], field).tag('x', 'y')
     expected = coordax.Field(
-        Duck(a=np.array([[1], [2]]), b=np.array([[3], [4]])), dims=('y', 'x')
+        Duck(a=jnp.array([[1], [2]]), b=jnp.array([[3], [4]])), dims=('y', 'x')
     )
     actual = array_2d.order_as('y', 'x')
+    testing.assert_fields_equal(actual, expected)
+
+    array_3d = jax.tree.map(lambda x: x[jnp.newaxis, ...], array_2d)
+    actual = jax.vmap(lambda x: x.order_as('y', 'x'))(array_3d).tag('z')
+    expected = coordax.Field(
+        Duck(a=jnp.array([[[1], [2]]]), b=jnp.array([[[3], [4]]])),
+        dims=('z', 'y', 'x'),
+    )
     testing.assert_fields_equal(actual, expected)
 
 

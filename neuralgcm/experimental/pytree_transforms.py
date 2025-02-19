@@ -42,6 +42,7 @@ from neuralgcm.experimental import data_specs
 from neuralgcm.experimental import dynamic_io
 from neuralgcm.experimental import jax_solar
 from neuralgcm.experimental import nnx_compat
+from neuralgcm.experimental import normalizations
 from neuralgcm.experimental import orographies
 from neuralgcm.experimental import parallelism
 from neuralgcm.experimental import pytree_utils
@@ -205,6 +206,72 @@ class BatchShiftAndNormalize(TransformABC):
         bias_init=bias_init,
         scale_init=scale_init,
         batch_axis_name=batch_axis_name,
+        skip_unspecified=skip_unspecified,
+        rngs=rngs,
+    )
+
+
+class StreamingStatsNormalization(TransformABC):
+  """Transform that uses streaming mean and variance to normalize inputs."""
+
+  def __init__(
+      self,
+      feature_shapes: dict[str, tuple[int, ...]],
+      feature_axes: tuple[int, ...],
+      update_stats: bool = False,
+      epsilon: float = 1e-5,
+      skip_unspecified: bool = False,
+      rngs: nnx.Rngs | None = None,
+  ):
+    # TODO(dkochkov): Consider removing rngs from constructors if we can
+    # instantiate normalization modules in the config. Currently these modules
+    # are initialized via factory pattern and receive rngs as an argument.
+    del rngs  # unused.
+    self.stream_norm_transforms = {
+        k: normalizations.StreamNorm(v, feature_axes, epsilon=epsilon)
+        for k, v in feature_shapes.items()
+    }
+    self.skip_unspecified = skip_unspecified
+    self.update_stats = update_stats
+
+  def __call__(self, inputs: typing.Pytree) -> typing.Pytree:
+    inputs, from_dict_fn = pytree_utils.as_dict(inputs)
+    transforms = pytree_utils.replace_with_matching_or_default(
+        inputs,
+        self.stream_norm_transforms,
+        default=lambda x, _: x if self.skip_unspecified else None,
+        check_used_all_replace_keys=False,
+    )
+    normalize = lambda x, y: y(x, self.update_stats)
+    outputs = jax.tree.map(normalize, inputs, transforms)
+    return from_dict_fn(outputs)
+
+  @classmethod
+  def for_input_shapes(
+      cls,
+      input_shapes: dict[str, typing.ShapeDtypeStruct],
+      feature_axes: tuple[int, ...],
+      exclude_regex: str | None = None,
+      update_stats: bool = False,
+      epsilon: float = 1e-6,
+      skip_unspecified: bool = False,
+      rngs: nnx.Rngs | None = None,
+  ):
+    """Custom constructor based on input shapes that should be normalized."""
+    feature_shapes = {
+        k: tuple(v.shape[i] for i in feature_axes)
+        for k, v in input_shapes.items()
+    }
+    if exclude_regex is not None:
+      feature_shapes = {
+          k: v for k, v in feature_shapes.items()
+          if not re.search(exclude_regex, k)
+      }
+    return cls(
+        feature_shapes=feature_shapes,
+        feature_axes=feature_axes,
+        update_stats=update_stats,
+        epsilon=epsilon,
         skip_unspecified=skip_unspecified,
         rngs=rngs,
     )
@@ -622,13 +689,17 @@ class ToModal(TransformABC):
   def __init__(
       self,
       grid: coordinates.LonLatGrid | coordinates.SphericalHarmonicGrid,
+      mesh: parallelism.Mesh,
   ):
     self.grid = grid
+    self.mesh = mesh
 
   def __call__(self, inputs: typing.Pytree) -> typing.Pytree:
     modal_outputs = {}
+    ylm_grid = self.grid.ylm_grid
+    ylm_grid = dataclasses.replace(ylm_grid, spmd_mesh=self.mesh.spmd_mesh)
     for k, v in inputs.items():
-      modal_outputs[k] = self.grid.ylm_grid.to_modal(v)
+      modal_outputs[k] = ylm_grid.to_modal(v)
     return modal_outputs
 
 
@@ -1030,7 +1101,7 @@ class VelocityAndPrognosticsWithModalGradients(TransformABC):
     if inputs_are_modal:
       self.pre_process = lambda x: x
     else:
-      self.pre_process = ToModal(self.opt_grid)
+      self.pre_process = ToModal(self.opt_grid, self.mesh)
 
   def _extract_features(
       self,

@@ -44,6 +44,8 @@ Sequence = collections.abc.Sequence
 
 T = TypeVar('T')
 Coordinate = coordinate_systems.Coordinate
+LabeledAxis = coordinate_systems.LabeledAxis
+DummyAxis = coordinate_systems.DummyAxis
 
 Array = jax.Array | ndarrays.NDArray
 ArrayLike = jax.typing.ArrayLike | ndarrays.NDArray
@@ -139,6 +141,49 @@ def _cmap_with_doc(
   return wrapped_fun
 
 
+def _check_valid(
+    named_array: named_axes.NamedArray, coords: dict[str, Coordinate]
+) -> None:
+  """Checks that the field coordinates and dimension names are consistent."""
+
+  # internal consistency of coordinates
+  for dim, coord in coords.items():
+    if coord.ndim > 1:
+      raise ValueError(
+          f'all coordinates in the coords dict must be 1D, got {coord} for '
+          f'dimension {dim}. Consider using Field.tag() instead to associate '
+          'multi-dimensional coordinates.'
+      )
+    if (dim,) != coord.dims:
+      raise ValueError(
+          f'coordinate under key {dim!r} in the coords dict must have '
+          f'dims={(dim,)!r} but got {coord.dims=}'
+      )
+
+  data_dims = set(named_array.named_dims)
+  keys_dims = set(_remove_dummy_axes(coords).keys())
+  if not keys_dims <= data_dims:
+    raise ValueError(
+        'coordinate keys must be a subset of the named dimensions of the '
+        f'underlying named array, got coordinate keys {keys_dims} vs '
+        f'data dimensions {data_dims}'
+    )
+
+  for dim, coord in coords.items():
+    if named_array.named_shape[dim] != coord.sizes[dim]:
+      raise ValueError(
+          f'inconsistent size for dimension {dim!r} between data and'
+          f' coordinates: {named_array.named_shape[dim]} vs'
+          f' {coord.sizes[dim]} on named array vs'
+          f' coordinate:\n{named_array}\n{coord}'
+      )
+
+
+def _remove_dummy_axes(coords: dict[str, Coordinate]) -> dict[str, Coordinate]:
+  """Removes dummy axes a dict of coordinates."""
+  return {k: v for k, v in coords.items() if not isinstance(v, DummyAxis)}
+
+
 def _swapped_binop(binop):
   """Swaps the order of operations for a binary operation."""
 
@@ -210,48 +255,12 @@ class Field:
       coords: optional mapping from dimension names to associated
         `coordax.Coordinate` objects.
     """
-    named_array = named_axes.NamedArray(data, dims)
-
+    self._named_array = named_axes.NamedArray(data, dims)
     if coords is None:
-      coords = {}
-
-    self._named_array = named_array
-    self._coords = coords
-    self._check_valid()
-
-  def _check_valid(self) -> None:
-    """Checks that the field coordinates and dimension names are consistent."""
-
-    # internal consistency of coordinates
-    for dim, coord in self.coords.items():
-      if coord.ndim > 1:
-        raise ValueError(
-            f'all coordinates in the coords dict must be 1D, got {coord} for '
-            f'dimension {dim}. Consider using Field.tag() instead to associate '
-            'multi-dimensional coordinates.'
-        )
-      if (dim,) != coord.dims:
-        raise ValueError(
-            f'coordinate under key {dim!r} in the coords dict must have '
-            f'dims={(dim,)!r} but got {coord.dims=}'
-        )
-
-    data_dims = set(self.named_array.named_dims)
-    keys_dims = set(self.coords.keys())
-    if not keys_dims <= data_dims:
-      raise ValueError(
-          'coordinate keys must be a subset of the named dimensions of the '
-          f'underlying named array, got coordinate keys {keys_dims} vs '
-          f'data dimensions {data_dims}'
-      )
-
-    for dim, coord in self.coords.items():
-      if self.named_shape[dim] != coord.sizes[dim]:
-        raise ValueError(
-            f'inconsistent size for dimension {dim!r} between data and '
-            f'coordinates: {self.named_shape[dim]} vs {coord.sizes[dim]} on '
-            f'named array vs coordinate:\n{self.named_array}\n{coord}'
-        )
+      self._coords = {}
+    else:
+      _check_valid(self._named_array, coords)
+      self._coords = _remove_dummy_axes(coords)
 
   @classmethod
   def from_namedarray(
@@ -266,10 +275,7 @@ class Field:
   def from_xarray(
       cls,
       data_array: xarray.DataArray,
-      coord_types: Sequence[type[Coordinate]] = (
-          coordinate_systems.LabeledAxis,
-          coordinate_systems.DummyAxis,
-      ),
+      coord_types: Sequence[type[Coordinate]] = (LabeledAxis, DummyAxis),
   ) -> Self:
     """Converts an xarray.DataArray into a coordax.Field.
 
@@ -316,11 +322,7 @@ class Field:
 
     while dims:
       coord = get_next_match()
-      coords.append(
-          coord.name
-          if isinstance(coord, coordinate_systems.DummyAxis)
-          else coord
-      )
+      coords.append(coord)
       assert coord.ndim > 0  # dimensions will shrink by at least one
       dims = dims[coord.ndim :]
 
@@ -429,7 +431,7 @@ class Field:
     result._named_array = named_array
     result._coords = dict(coords)
     if isinstance(named_array.data, Array):
-      result._check_valid()
+      _check_valid(result.named_array, result.coords)
     return result
 
   def unwrap(self, *names: str | Coordinate) -> Array:
@@ -481,7 +483,10 @@ class Field:
     for c in names:
       if isinstance(c, Coordinate):
         for dim, axis in zip(c.dims, c.axes):
-          coords[dim] = axis
+          # TODO(shoyer): consider raising an error if an unnamed axis has the
+          # wrong size.
+          if dim is not None:
+            coords[dim] = axis
     result = Field.from_namedarray(tagged_array, coords)
     return result
 
@@ -708,9 +713,7 @@ def get_coordinate(
   normalize_idx = lambda idx: idx if idx >= 0 else idx + ndim
   indices_to_exclude = [normalize_idx(i) for i in indices_to_exclude]
   if not set(indices_to_exclude).issubset(set(range(ndim))):
-    raise ValueError(
-        f'{indices_to_exclude=} must be in [{-ndim}, {ndim})'
-    )
+    raise ValueError(f'{indices_to_exclude=} must be in [{-ndim}, {ndim})')
   if check_excluded_dims and not set(dimensions_to_exclude).issubset(set(dims)):
     unknown_dims = set(dimensions_to_exclude).difference(set(dims))
     raise ValueError(f'{unknown_dims=} are not in {field.dims=}')

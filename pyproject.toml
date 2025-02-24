@@ -39,6 +39,7 @@ experimental = [
     "etils",
     "fiddle",
     "flax",
+    "grain",
     "orbax",
-    "penzai",
+    "treescope",
 ]

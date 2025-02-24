@@ -8,6 +8,4 @@
 2. Manages coordinate objects that carry discretization details and custom methods
 3. Compatible with lossless conversion to and from ``Xarray`` representation.
 
-Current Field API and implementation builds on top of [``penzai.core.named_axes``](https://penzai.readthedocs.io/en/stable/notebooks/named_axes.html) package.
-
-``Coordax`` is particularly well-suited for scientific simulations where it is crucial to propagate discretization details and associated objects throughout the computation, such as Earth system modeling of fluid dynamics. For other use cases, we believe [``penzai.core.named_axes``](https://penzai.readthedocs.io/en/stable/notebooks/named_axes.html) is a better fit.
+``Coordax`` is particularly well-suited for scientific simulations where it is crucial to propagate discretization details and associated objects throughout the computation, such as Earth system modeling of fluid dynamics. For other use cases, we believe [``penzai.core.named_axes``](https://penzai.readthedocs.io/en/stable/notebooks/named_axes.html) may be a better fit.

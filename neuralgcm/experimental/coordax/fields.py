@@ -47,8 +47,8 @@ Coordinate = coordinate_systems.Coordinate
 LabeledAxis = coordinate_systems.LabeledAxis
 DummyAxis = coordinate_systems.DummyAxis
 
-Array = jax.Array | ndarrays.NDArray
-ArrayLike = jax.typing.ArrayLike | ndarrays.NDArray
+Array = ndarrays.Array
+ArrayLike = ndarrays.ArrayLike
 
 
 def _dimension_names(*names: str | Coordinate) -> tuple[str, ...]:

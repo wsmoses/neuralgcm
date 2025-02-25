@@ -122,7 +122,7 @@ class FieldTest(parameterized.TestCase):
         textwrap.dedent("""\
             inconsistent size for dimension 'x' between data and coordinates: 3 vs 4 on named array vs coordinate:
             NamedArray(
-                data=Array([0., 0., 0.], dtype=float32),
+                data=array([0., 0., 0.]),
                 dims=('x',),
             )
             coordax.SizedAxis('x', size=4)"""),
@@ -157,8 +157,8 @@ class FieldTest(parameterized.TestCase):
   def test_field_repr(self):
     expected = textwrap.dedent("""\
         Field(
-            data=Array([[1, 2, 3],
-                        [4, 5, 6]], dtype=int32),
+            data=array([[1, 2, 3],
+                        [4, 5, 6]]),
             dims=('x', 'y'),
             coords={
                 'y': coordax.LabeledAxis('y', ticks=array([7, 8, 9])),
@@ -448,7 +448,7 @@ class FieldTest(parameterized.TestCase):
     expected_messsage = textwrap.dedent("""\
         inconsistent size for dimension 'x' between data and coordinates: 4 vs 5 on named array vs coordinate:
         NamedArray(
-            data=Array([0, 1, 2, 3], dtype=int32),
+            data=array([0, 1, 2, 3]),
             dims=('x',),
         )
         coordax.DummyAxis('x')""")

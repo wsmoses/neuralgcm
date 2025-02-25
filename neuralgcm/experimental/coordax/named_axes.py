@@ -38,6 +38,11 @@ from treescope import lowering
 from treescope import ndarray_adapters
 from treescope import rendering_parts
 from treescope.external import jax_support
+from treescope.external import numpy_support
+
+
+Array = ndarrays.Array
+ArrayLike = ndarrays.ArrayLike
 
 
 def attrs_summary_type(
@@ -120,11 +125,19 @@ class NamedArrayAdapter(ndarray_adapters.NDArrayAdapter['NamedArray']):
           )
         mask_data = jnp.broadcast_to(mask, array.shape)
 
-    return jax_support.JAXArrayAdapter().get_array_data_with_truncation(
-        array=array.data,
-        mask=mask_data,
-        edge_items_per_axis=edge_items_per_axis,
-    )
+    if isinstance(array.data, jax.Array):
+      return jax_support.JAXArrayAdapter().get_array_data_with_truncation(
+          array=array.data,
+          mask=mask_data,
+          edge_items_per_axis=edge_items_per_axis,
+      )
+    else:
+      assert isinstance(array.data, np.ndarray | ndarrays.NDArray)
+      return numpy_support.NumpyArrayAdapter().get_array_data_with_truncation(
+          array=ndarrays.to_numpy_array(array.data),
+          mask=mask_data,
+          edge_items_per_axis=edge_items_per_axis,
+      )
 
   def get_array_summary(self, array: NamedArray, fast: bool) -> str:
     attrs, summary, contained_type = self.summary_fn(
@@ -154,7 +167,7 @@ class NamedArrayAdapter(ndarray_adapters.NDArrayAdapter['NamedArray']):
   def should_autovisualize(self, array: NamedArray) -> bool:
     # only visualize jax.Arrays that are not Tracers and not deleted to avoid
     # raising an errors during visualization.
-    return (
+    return isinstance(array.data, np.ndarray) or (
         isinstance(array.data, jax.Array)
         and not isinstance(array.data, jax.core.Tracer)
         and not array.data.is_deleted()
@@ -470,9 +483,6 @@ def _wrap_array_method(
   return wrapped_func
 
 
-Array = jax.Array | ndarrays.NDArray
-
-
 _VALID_PYTREE_OPS = (
     'JAX pytree operations on NamedArray objects are only valid when they'
     ' insert new leading dimensions, or trim unnamed leading dimensions. The'
@@ -513,7 +523,7 @@ class NamedArray:
 
   def __init__(
       self,
-      data: jax.typing.ArrayLike | ndarrays.NDArray,
+      data: ArrayLike,
       dims: tuple[str | None, ...] | None = None,
   ):
     """Construct a NamedArray.
@@ -525,7 +535,7 @@ class NamedArray:
         `None` indicates positional axes. If `dims` is not provided, all axes
         are positional.
     """
-    data = ndarrays.to_ndarray(data)
+    data = ndarrays.to_array(data)
     if dims is None:
       dims = (None,) * data.ndim
     else:
@@ -583,7 +593,7 @@ class NamedArray:
   def dtype(self) -> jnp.dtype | None:
     """The dtype of the underlying data array."""
     data = self.data
-    return data.dtype if isinstance(data, jax.Array) else None
+    return data.dtype if isinstance(data, np.ndarray | jax.Array) else None
 
   def __treescope_repr__(self, path: str | None, subtree_renderer: Any):
     """Treescope handler."""
@@ -627,11 +637,8 @@ class NamedArray:
     dims, shape = treedef
     [data] = leaves
 
-    # work around https://github.com/jax-ml/jax/issues/25745
-    if isinstance(data, np.ndarray):
-      data = jnp.asarray(data)
-
     if not all(
+        # isinstance(x, jax.typing.ArrayLike)
         isinstance(x, Array)
         for x in jax.tree.leaves(data, is_leaf=lambda y: y is None)
     ):

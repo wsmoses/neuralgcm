@@ -19,7 +19,6 @@ import abc
 from typing import Any, Callable, Self, TypeVar
 
 import jax
-import jax.numpy as jnp
 import numpy as np
 
 try:
@@ -32,6 +31,9 @@ class NDArray(abc.ABC):
   """Base class for non-JAX arrays that can be used with Coordax.
 
   To register a new NDArray, use `coordax.register_ndarray()`.
+
+  NDArray instances are also expected to be registered as JAX pytree nodes:
+  https://docs.jax.dev/en/latest/pytrees.html#extending-pytrees
   """
 
   @property
@@ -61,12 +63,56 @@ class NDArray(abc.ABC):
     """Index this array, returning a new array."""
 
 
+PythonScalar = bool | int | float | complex
+NumPyScalar = np.generic
+Scalar = NumPyScalar | PythonScalar
+ArrayLike = Scalar | np.ndarray | jax.Array | NDArray
+Array = np.ndarray | jax.Array | NDArray
+
+
+def to_array(data: ArrayLike) -> Array:
+  """Returns an NDArray compatible with JAX and Coordax.
+
+  Args:
+    data: a scalar, NumPy array, JAX array, or registered NDArray.
+
+  Returns:
+    JAX array, NumPy array or NDArray, compatible with jax.jit and suitable for
+    using inside Coordax's NamedArray and Field.
+  """
+
+  if isinstance(data, Scalar):
+    data = np.asarray(data)
+
+  if isinstance(data, np.ndarray):
+    for is_matching_numpy_array, from_numpy in _FROM_NUMPY_FUNCS:
+      if is_matching_numpy_array(data):
+        return from_numpy(data)
+
+  if not isinstance(data, (np.ndarray, jax.Array, NDArray)):
+    raise TypeError(
+        'data must be a np.ndarray, jax.Array or a duck-typed array registered '
+        f'with coordax.register_ndarray(), got {type(data).__name__}: {data}'
+    )
+
+  return data
+
+
+def to_numpy_array(data: Array) -> np.ndarray:
+  """Returns a numpy-compatible version of this array."""
+  if isinstance(data, NDArray):
+    for array_type, to_numpy in _TO_NUMPY_FUNCS:
+      if isinstance(data, array_type):
+        return to_numpy(data)
+  return np.asarray(data)
+
+
 T = TypeVar('T')
 
 
-_TO_NUMPY_FUNCS: list[
-    tuple[type[NDArray], Callable[[NDArray], np.ndarray]]
-] = []
+_TO_NUMPY_FUNCS: list[tuple[type[NDArray], Callable[[NDArray], np.ndarray]]] = (
+    []
+)
 _FROM_NUMPY_FUNCS: list[
     tuple[Callable[[Any], bool], Callable[[np.ndarray], NDArray]]
 ] = []
@@ -84,34 +130,6 @@ def register_ndarray(
   _FROM_NUMPY_FUNCS.append((is_matching_numpy_array, from_numpy))
   return array_type
 
-
-def to_ndarray(data: jax.typing.ArrayLike | NDArray) -> jax.Array | NDArray:
-  """Returns an NDArray compatible with Coordax."""
-
-  if isinstance(data, np.ndarray):
-    for is_matching_numpy_array, from_numpy in _FROM_NUMPY_FUNCS:
-      if is_matching_numpy_array(data):
-        return from_numpy(data)
-
-  if not isinstance(data, NDArray):
-    try:
-      data = jnp.asarray(data)
-    except TypeError as e:
-      raise TypeError(
-          'data must be a jax.Array or a duck-typed array registered with '
-          f'coordax.register_ndarray(), got {type(data).__name__}: {data}'
-      ) from e
-
-  return data
-
-
-def to_numpy_array(data: jax.Array | NDArray) -> np.ndarray:
-  """Returns a numpy-compatible version of this array."""
-  if isinstance(data, NDArray):
-    for array_type, to_numpy in _TO_NUMPY_FUNCS:
-      if isinstance(data, array_type):
-        return to_numpy(data)
-  return np.asarray(data)
 
 
 if jax_datetime is not None:

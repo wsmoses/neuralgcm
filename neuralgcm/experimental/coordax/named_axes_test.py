@@ -17,9 +17,11 @@ import re
 import textwrap
 
 from absl.testing import absltest
+from absl.testing import parameterized
 import chex
 import jax
 import jax.numpy as jnp
+from neuralgcm.experimental import jax_datetime as jdt
 from neuralgcm.experimental.coordax import named_axes
 from neuralgcm.experimental.coordax import ndarrays
 import numpy as np
@@ -50,7 +52,7 @@ def assert_pytree_equal(actual, expected) -> None:
     np.testing.assert_array_equal(actual_value, expected_value, err_msg=k)
 
 
-class NamedAxesTest(absltest.TestCase):
+class NamedAxesTest(parameterized.TestCase):
 
   def test_named_array(self):
     data = np.arange(10).reshape((2, 5))
@@ -65,17 +67,48 @@ class NamedAxesTest(absltest.TestCase):
         repr(array),
         textwrap.dedent("""\
             NamedArray(
-                data=Array([[0, 1, 2, 3, 4],
-                            [5, 6, 7, 8, 9]], dtype=int32),
+                data=array([[0, 1, 2, 3, 4],
+                            [5, 6, 7, 8, 9]]),
                 dims=('x', None),
             )"""),
     )
 
+  def test_constructor_array_types(self):
+    with self.subTest('py-scalar'):
+      array = named_axes.NamedArray(1.0, ())
+      self.assertIsInstance(array.data, np.ndarray)
+
+    with self.subTest('np-scalar'):
+      array = named_axes.NamedArray(np.float32(1.0), ())
+      self.assertIsInstance(array.data, np.ndarray)
+
+    with self.subTest('numpy'):
+      data = np.arange(10)
+      array = named_axes.NamedArray(data, ('x',))
+      self.assertIsInstance(array.data, np.ndarray)
+
+    with self.subTest('jax'):
+      data = jnp.arange(10)
+      array = named_axes.NamedArray(data, ('x',))
+      self.assertIsInstance(array.data, jnp.ndarray)
+
+  def test_constructor_datetime(self):
+    dt = jdt.to_timedelta(1, 'day')
+
+    array = named_axes.NamedArray(dt, ())
+    self.assertIsInstance(array.data, jdt.Timedelta)
+
+    array = named_axes.NamedArray(dt.to_timedelta64(), ())
+    self.assertIsInstance(array.data, jdt.Timedelta)
+
+    array = named_axes.NamedArray(np.timedelta64(dt.to_timedelta64()), ())
+    self.assertIsInstance(array.data, jdt.Timedelta)
+
   def test_constructor_error(self):
     with self.assertRaisesWithLiteralMatch(
         TypeError,
-        'data must be a jax.Array or a duck-typed array registered with'
-        ' coordax.register_ndarray(), got dict: {}',
+        'data must be a np.ndarray, jax.Array or a duck-typed array registered'
+        ' with coordax.register_ndarray(), got dict: {}',
     ):
       named_axes.NamedArray({})
     with self.assertRaisesRegex(
@@ -160,10 +193,11 @@ class NamedAxesTest(absltest.TestCase):
 
   def test_jit_constructor(self):
     data = np.arange(10).reshape((2, 5))
-    array = jax.jit(named_axes.NamedArray)(data)
-    actual = named_axes.NamedArray(data)
+    expected = named_axes.NamedArray(data)
+    self.assertIsInstance(expected.data, np.ndarray)
+    actual = jax.jit(named_axes.NamedArray)(data)
     self.assertIsInstance(actual.data, jnp.ndarray)
-    assert_named_array_equal(actual, array)
+    assert_named_array_equal(actual, expected)
 
   def test_grad(self):
     data = np.arange(6.0).reshape((2, 3))
@@ -197,7 +231,6 @@ class NamedAxesTest(absltest.TestCase):
     data = np.arange(3)
     array = jax.vmap(named_axes.NamedArray)(data)
     actual = named_axes.NamedArray(data)
-    self.assertIsInstance(actual.data, jnp.ndarray)
     assert_named_array_equal(actual, array)
 
   def test_scan(self):
@@ -403,12 +436,15 @@ class NamedAxesTest(absltest.TestCase):
     actual = jax.vmap(lambda x: x.order_as('y', 'x'))(array)
     assert_named_array_equal(actual, expected)
 
-  def test_nmap_identity(self):
-    data = np.arange(2 * 3 * 4).reshape((2, 3, 4))
+  @parameterized.named_parameters(
+      dict(testcase_name='numpy', xp=np),
+      dict(testcase_name='jax.numpy', xp=jnp),
+  )
+  def test_nmap_identity(self, xp):
+    data = xp.arange(2 * 3 * 4).reshape((2, 3, 4))
 
     def identity_assert_ndim(ndim):
       def f(x):
-        self.assertIsInstance(x, jnp.ndarray)
         self.assertEqual(x.ndim, ndim)
         return x
 

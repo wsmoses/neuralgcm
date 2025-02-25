@@ -100,8 +100,9 @@ equality) will give silently incorrect results:
 ## Implementation
 
 Under the hood, `Timedelta` stores its state in integer arrays of `days` and
-`seconds`. `Datetime` is implemented as a simple wrapper around `Timedelta`, indicating
-a time difference relative to the start of the Unix Epoch (1970-01-01).
+`seconds`. `Datetime` is implemented as a simple wrapper around `Timedelta`,
+indicating a time difference relative to the start of the Unix Epoch
+(1970-01-01).
 
 Like datetime.timedelta, the seconds field in `Timedelta` is always normalized
 to fall in the range `[0, 24*60*60)`, with whole days moved into `days`. Using
@@ -111,3 +112,7 @@ million years.
 Currently, `Timedelta` and `Datetime` objects are implemented as JAX pytrees,
 We will likely switch the implementation to make use of custom dtypes if they
 are supported by JAX in the future.
+
+The underlying integer array types wrapped by JAX-Datetime may be either NumPy
+or JAX arrays. NumPy arrays are preserved by the constructor, but the results of
+any computation will likely be JAX arrays.

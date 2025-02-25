@@ -44,9 +44,32 @@ class TimedeltaTest(parameterized.TestCase):
       jdt.Timedelta(days=0, seconds=jnp.arange(3))
 
     with self.assertRaisesWithLiteralMatch(
-        ValueError, 'days must be an integer array, got float32'
+        ValueError, 'days must be an integer array, got float64'
     ):
       jdt.Timedelta(days=1.5)
+
+  def test_wrapped_array_types(self):
+    delta = jdt.Timedelta()
+    self.assertIsInstance(delta.days, np.ndarray)
+    self.assertIsInstance(delta.seconds, np.ndarray)
+
+    delta = jdt.Timedelta(days=1, seconds=1)
+    self.assertIsInstance(delta.days, np.ndarray)
+    self.assertIsInstance(delta.seconds, np.ndarray)
+
+    delta = jdt.Timedelta(days=jnp.array(1))
+    self.assertIsInstance(delta.days, jnp.ndarray)
+    self.assertIsInstance(delta.seconds, jnp.ndarray)
+
+    delta = jdt.Timedelta(seconds=jnp.array(1))
+    self.assertIsInstance(delta.days, jnp.ndarray)
+    self.assertIsInstance(delta.seconds, jnp.ndarray)
+
+    # TODO(shoyer): consider revising this, to require that days and seconds use
+    # the same array type.
+    delta = jdt.Timedelta(days=jnp.array(1), seconds=1)
+    self.assertIsInstance(delta.days, jnp.ndarray)
+    self.assertIsInstance(delta.seconds, np.ndarray)
 
   def test_array_properties(self):
     delta = jdt.Timedelta(days=jnp.arange(3), seconds=jnp.arange(3))

@@ -280,9 +280,8 @@ def _array_converter(dtype_kind: str) -> Callable[[np.ndarray], PyTree]:
   if dtype_kind in 'mM':
     import neuralgcm.experimental.jax_datetime as jdt  # pylint: disable=g-import-not-at-top
 
-    cpu = jax.devices('cpu')[0]
     to_jdt = {'M': jdt.to_datetime, 'm': jdt.to_timedelta}[dtype_kind]
-    return lambda x: to_jdt(x, device=cpu)
+    return to_jdt
   else:
     return lambda x: x
 

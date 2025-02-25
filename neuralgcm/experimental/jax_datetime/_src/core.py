@@ -26,8 +26,8 @@ import numpy as np
 
 
 Array = np.ndarray | jax.Array
-Integer = int | Array
-Float = float | Integer
+Integer = int | np.integer | Array
+Float = float | np.floating | Integer
 
 DeviceLike = jax.Device | jax.sharding.Sharding | None
 
@@ -73,24 +73,32 @@ class PytreeArray:
   __array_priority__ = 100
 
 
-def _as_integer_array(x: Integer, name: str, device: DeviceLike = None) -> jnp.ndarray:
-  x = jnp.asarray(x, device=device)
-  if not jnp.issubdtype(x.dtype, jnp.integer):
+def _as_integer_array(x: Integer, name: str) -> np.ndarray | jax.Array:
+  if not isinstance(x, jax.Array):
+    x = np.asarray(x)
+  if not np.issubdtype(x.dtype, np.integer):
     raise ValueError(f'{name} must be an integer array, got {x.dtype}')
   return x
+
+
+def _zeros_like(other: np.ndarray | jax.Array):
+  zeros_like = jnp.zeros_like if isinstance(other, jax.Array) else np.zeros_like
+  return zeros_like(other)
 
 
 _SECONDS_PER_DAY = 24 * 60 * 60
 
 
-@jax.jit
-def _normalize_days_seconds(
-    days: jnp.ndarray, seconds: jnp.ndarray
-) -> tuple[jnp.ndarray, jnp.ndarray]:
-  assert jnp.issubdtype(days.dtype, jnp.integer)
-  assert jnp.issubdtype(seconds.dtype, jnp.integer)
-  days_delta, seconds = jnp.divmod(seconds, _SECONDS_PER_DAY)
-  days = days + days_delta
+def _asarray(x: np.integer | Array) -> Array:
+  return np.asarray(x) if isinstance(x, np.integer) else x
+
+
+def _normalize_days_seconds(days: Array, seconds: Array) -> tuple[Array, Array]:
+  assert np.issubdtype(days.dtype, np.integer)
+  assert np.issubdtype(seconds.dtype, np.integer)
+  days_delta, seconds = divmod(seconds, _SECONDS_PER_DAY)
+  days = _asarray(days + days_delta)
+  seconds = _asarray(seconds)
   return (days, seconds)
 
 
@@ -165,14 +173,14 @@ class Timedelta(PytreeArray):
         they must have the same shape.
     """
     if days is None and seconds is None:
-      days = jnp.asarray(0)
-      seconds = jnp.asarray(0)
+      days = np.asarray(0)
+      seconds = np.asarray(0)
     elif days is None:
       seconds = _as_integer_array(seconds, name='seconds')
-      days = jnp.zeros(seconds.shape, dtype=int)
+      days = _zeros_like(seconds)
     elif seconds is None:
       days = _as_integer_array(days, name='days')
-      seconds = jnp.zeros(days.shape, dtype=int)
+      seconds = _zeros_like(days)
     else:
       days = _as_integer_array(days, name='days')
       seconds = _as_integer_array(seconds, name='seconds')
@@ -185,42 +193,36 @@ class Timedelta(PytreeArray):
     self._days, self._seconds = _normalize_days_seconds(days, seconds)
 
   @property
-  def days(self) -> jnp.ndarray:
+  def days(self) -> Array:
     return self._days
 
   @property
-  def seconds(self) -> jnp.ndarray:
+  def seconds(self) -> Array:
     return self._seconds
 
   def __repr__(self) -> str:
     return f'jax_datetime.Timedelta(days={self.days}, seconds={self.seconds})'
 
   @classmethod
-  def from_normalized(
-      cls, days: Integer, seconds: Integer, *, device: DeviceLike = None
-  ) -> Self:
+  def from_normalized(cls, days: Integer, seconds: Integer) -> Self:
     """Fast-path constructor from pre-normalized days and seconds."""
     result = object.__new__(cls)
-    result._days = _as_integer_array(days, name='days', device=device)
-    result._seconds = _as_integer_array(seconds, name='seconds', device=device)
+    result._days = _as_integer_array(days, name='days')
+    result._seconds = _as_integer_array(seconds, name='seconds')
     return result
 
   @classmethod
-  def from_timedelta64(
-      cls, values: np.timedelta64 | np.ndarray, *, device: DeviceLike = None
-  ) -> Self:
+  def from_timedelta64(cls, values: np.timedelta64 | np.ndarray) -> Self:
     """Construct a Timedelta from a NumPy timedelta64 scalar or array."""
     seconds = values // np.timedelta64(1, 's')  # round down
     # normalize with numpy int64 arrays to avoid overflow in int32
     days, seconds = divmod(seconds, _SECONDS_PER_DAY)
-    return cls.from_normalized(days, seconds, device=device)
+    return cls.from_normalized(days, seconds)
 
   @classmethod
-  def from_pytimedelta(
-      cls, values: datetime.timedelta, *, device: DeviceLike = None
-  ) -> Self:
+  def from_pytimedelta(cls, values: datetime.timedelta) -> Self:
     """Construct a Timedelta from a datetime.timedelta object."""
-    return cls.from_normalized(values.days, values.seconds, device=device)
+    return cls.from_normalized(values.days, values.seconds)
 
   def to_timedelta64(self) -> np.timedelta64 | np.ndarray:
     """Convert this value to a np.timedelta64 scalar or array."""
@@ -238,8 +240,8 @@ class Timedelta(PytreeArray):
   # https://docs.python.org/3/library/datetime.html#timedelta-objects
 
   def total_seconds(self) -> jnp.ndarray:
-    """Total number of seconds in the duration, as a float."""
-    return self.days.astype(float) * _SECONDS_PER_DAY + self.seconds
+    """Total number of seconds in the duration, as a JAX array of floats."""
+    return jnp.asarray(self.days, float) * _SECONDS_PER_DAY + self.seconds
 
   @overload
   def __add__(self, other: DatetimeLike) -> Datetime:
@@ -465,29 +467,19 @@ class Datetime(PytreeArray):
     return f'jax_datetime.Datetime(delta={self.delta})'
 
   @classmethod
-  def from_datetime64(
-      cls, values: np.datetime64 | np.ndarray, *, device: DeviceLike = None
-  ) -> Datetime:
+  def from_datetime64(cls, values: np.datetime64 | np.ndarray) -> Datetime:
     """Construct a Datetime from a NumPy datetime64 scalar or array."""
-    return cls(
-        Timedelta.from_timedelta64(values - _NUMPY_UNIX_EPOCH, device=device)
-    )
+    return cls(Timedelta.from_timedelta64(values - _NUMPY_UNIX_EPOCH))
 
   @classmethod
-  def from_pydatetime(
-      cls, value: datetime.datetime, *, device: DeviceLike = None
-  ) -> Datetime:
+  def from_pydatetime(cls, value: datetime.datetime) -> Datetime:
     """Construct a Datetime from a Python datetime.datetime object."""
-    return cls(
-        Timedelta.from_pytimedelta(value - _PY_UNIX_EPOCH, device=device)
-    )
+    return cls(Timedelta.from_pytimedelta(value - _PY_UNIX_EPOCH))
 
   @classmethod
-  def from_isoformat(cls, value: str, *, device: DeviceLike = None) -> Datetime:
+  def from_isoformat(cls, value: str) -> Datetime:
     """Construct a Datetime from an ISO 8601 string, e.g., '2024-01-01T00'."""
-    return cls.from_pydatetime(
-        datetime.datetime.fromisoformat(value), device=device
-    )
+    return cls.from_pydatetime(datetime.datetime.fromisoformat(value))
 
   def to_datetime64(self) -> np.datetime64 | np.ndarray:
     """Convert this Datetime to a NumPy datetime64 scalar or array."""
@@ -593,37 +585,32 @@ DatetimeLike = Datetime | datetime.datetime | np.datetime64
 TimedeltaLike = Timedelta | datetime.timedelta | np.timedelta64
 
 
-def to_datetime(
-    value: DatetimeLike | np.ndarray | str, *, device: DeviceLike = None
-) -> Datetime:
+def to_datetime(value: DatetimeLike | np.ndarray | str) -> Datetime:
   """Convert a value into a Datetime object.
 
   Args:
     value: a jax_datetime.Datetime, datetime.datetime, np.datetime64, np.ndarray
       with a datetime64 dtype or string in ISO 8601 format.
-    device: optional JAX device on which to place the result.
 
   Returns:
     Value cast to a jax_datetime.Datetime object.
   """
   match value:
     case Datetime():
-      return jax.device_put(value, device=device)
+      return value
     case datetime.datetime():
-      return Datetime.from_pydatetime(value, device=device)
+      return Datetime.from_pydatetime(value)
     case np.datetime64():
-      return Datetime.from_datetime64(value, device=device)
+      return Datetime.from_datetime64(value)
     case np.ndarray():
-      return Datetime.from_datetime64(value, device=device)
+      return Datetime.from_datetime64(value)
     case str():
-      return Datetime.from_isoformat(value, device=device)
+      return Datetime.from_isoformat(value)
     case _:
       raise TypeError(f'unsupported type for to_datetime: {type(value)}')
 
 
-def _to_timedelta_from_units(
-    value: Integer, unit: str, device: DeviceLike
-) -> Timedelta:
+def _to_timedelta_from_units(value: Integer, unit: str) -> Timedelta:
   """Create Timedelta from a numeric value and unit string."""
   # valid units are a subset of those supported by pd.to_timedelta:
   # https://pandas.pydata.org/docs/reference/api/pandas.to_timedelta.html
@@ -632,7 +619,6 @@ def _to_timedelta_from_units(
         'to_timedelta with units requires either a number or an array of'
         f' numbers, got {type(value)}: {value!r}'
     )
-  value = jnp.asarray(value, device=device)
   if unit in {'D', 'day', 'days'}:
     return Timedelta(days=value)
   elif unit in {'h', 'hr', 'hour', 'hours'}:
@@ -648,8 +634,6 @@ def _to_timedelta_from_units(
 def to_timedelta(
     value: TimedeltaLike | Integer,
     unit: str | None = None,
-    *,
-    device: DeviceLike = None,
 ) -> Timedelta:
   """Convert a value into a Timedelta object.
 
@@ -660,23 +644,22 @@ def to_timedelta(
       Supported values are D/days/days, hours/hour/hr/h/H, m/minute/min/minutes,
       and s/seconds/sec/second, i.e., NumPy's supported datetime units plus
       standard abbreviations.
-    device: optional JAX device on which to place the result.
 
   Returns:
     Value cast to a jax_datetime.Timedelta object.
   """
   if unit is not None:
-    return _to_timedelta_from_units(value, unit, device=device)
+    return _to_timedelta_from_units(value, unit)
 
   match value:
     case Timedelta():
-      return jax.device_put(value, device=device)
+      return value
     case datetime.timedelta():
-      return Timedelta.from_pytimedelta(value, device=device)
+      return Timedelta.from_pytimedelta(value)
     case np.timedelta64():
-      return Timedelta.from_timedelta64(value, device=device)
+      return Timedelta.from_timedelta64(value)
     case np.ndarray():
-      return Timedelta.from_timedelta64(value, device=device)
+      return Timedelta.from_timedelta64(value)
     case _:
       raise TypeError(
           f'unsupported type for to_timedelta without unit: {type(value)}'

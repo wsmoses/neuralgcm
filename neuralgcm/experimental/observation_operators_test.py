@@ -13,12 +13,20 @@
 # limitations under the License.
 """Tests for observation operator API and implementations."""
 
+import functools
 from absl.testing import absltest
 from absl.testing import parameterized
 import chex
+from flax import nnx
 from jax import config  # pylint: disable=g-importing-member
 from neuralgcm.experimental import coordax as cx
+from neuralgcm.experimental import coordinates
 from neuralgcm.experimental import observation_operators
+from neuralgcm.experimental import parallelism
+from neuralgcm.experimental import pytree_mappings
+from neuralgcm.experimental import pytree_transforms
+from neuralgcm.experimental import standard_layers
+from neuralgcm.experimental import towers
 import numpy as np
 
 
@@ -73,6 +81,98 @@ class DataObservationOperatorsTest(parameterized.TestCase):
         f' {query["x"]}',
     ):
       _ = operator.observe(inputs={}, query=query)
+
+
+class FixedLearnedObservationOperatorTest(parameterized.TestCase):
+  """Tests FixedLearnedObservationOperator implementation."""
+
+  def setUp(self):
+    super().setUp()
+    self.coords = coordinates.DinosaurCoordinates(
+        horizontal=coordinates.LonLatGrid.T21(),
+        vertical=coordinates.SigmaLevels.equidistant(4),
+    )
+    input_names = ('u', 'v', 't')
+    feature_module = pytree_transforms.PrognosticFeatures(
+        self.coords, volume_field_names=input_names
+    )
+    tower_factory = functools.partial(
+        towers.ColumnTower,
+        column_net_factory=functools.partial(
+            standard_layers.MlpUniform, hidden_size=6, n_hidden_layers=2
+        ),
+    )
+    mapping_factory = functools.partial(
+        pytree_mappings.ChannelMapping,
+        tower_factory=tower_factory,
+    )
+    embedding_factory = functools.partial(
+        pytree_mappings.Embedding,
+        feature_module=feature_module,
+        mapping_factory=mapping_factory,
+        mesh=parallelism.Mesh(None),
+    )
+    volume_field_names = ('turbulence_index',)
+    surface_field_names = ('evaporation_rate',)
+    self.observation_mapping = pytree_mappings.CoordsStateMapping(
+        coords=self.coords,
+        surface_field_names=surface_field_names,
+        volume_field_names=volume_field_names,
+        embedding_factory=embedding_factory,
+        rngs=nnx.Rngs(0),
+        mesh=parallelism.Mesh(None),
+    )
+    self.inputs = {
+        k: cx.wrap(np.ones(self.coords.shape), self.coords) for k in input_names
+    }
+
+  def test_returns_only_queried_fields(self):
+    operator = observation_operators.FixedLearnedObservationOperator(
+        self.observation_mapping
+    )
+    query_a = {'evaporation_rate': self.coords.horizontal}
+    actual = operator.observe(inputs=self.inputs, query=query_a)
+    self.assertSetEqual(set(actual.keys()), {'evaporation_rate'})
+    self.assertEqual(
+        cx.get_coordinate(actual['evaporation_rate']), self.coords.horizontal
+    )
+
+    query_b = {
+        'turbulence_index': self.coords,
+        'evaporation_rate': self.coords.horizontal,
+    }
+    actual = operator.observe(inputs=self.inputs, query=query_b)
+    self.assertSetEqual(
+        set(actual.keys()), {'turbulence_index', 'evaporation_rate'}
+    )
+    self.assertEqual(
+        cx.get_coordinate(actual['evaporation_rate']), self.coords.horizontal
+    )
+    self.assertEqual(cx.get_coordinate(actual['turbulence_index']), self.coords)
+
+  def test_raises_on_missing_field(self):
+    operator = observation_operators.FixedLearnedObservationOperator(
+        self.observation_mapping
+    )
+    query = {'X': self.coords.horizontal}
+    with self.assertRaisesWithLiteralMatch(
+        ValueError,
+        "Query contains k='X' not in ['evaporation_rate', 'turbulence_index']",
+    ):
+      operator.observe(inputs=self.inputs, query=query)
+
+  def test_raises_on_non_matching_coordinate(self):
+    operator = observation_operators.FixedLearnedObservationOperator(
+        self.observation_mapping
+    )
+    query_coord = coordinates.LonLatGrid.TL31()
+    query = {'evaporation_rate': query_coord}
+    with self.assertRaisesWithLiteralMatch(
+        ValueError,
+        f'Query (evaporation_rate, {query_coord}) is not compatible with'
+        f' coord={self.coords}',
+    ):
+      _ = operator.observe(inputs=self.inputs, query=query)
 
 
 if __name__ == '__main__':

@@ -17,7 +17,10 @@
 import abc
 import dataclasses
 from flax import nnx
+import jax
+import jax.numpy as jnp
 from neuralgcm.experimental import coordax as cx
+from neuralgcm.experimental import pytree_mappings
 
 
 class ObservationOperator(nnx.Module, abc.ABC):
@@ -68,4 +71,45 @@ class DataObservationOperator(ObservationOperator):
       if v != coord:
         raise ValueError(f'Query ({k}, {v}) does not match field.{coord=}')
       observations[k] = self.fields[k]
+    return observations
+
+
+@dataclasses.dataclass
+class FixedLearnedObservationOperator(ObservationOperator):
+  """Operator that computes fixed set of observations using state mapping."""
+
+  coordinate_mapping: pytree_mappings.CoordsStateMapping
+
+  def observe(
+      self,
+      inputs: dict[str, cx.Field],
+      query: dict[str, cx.Field | cx.Coordinate],
+  ) -> dict[str, cx.Field]:
+    """Returns predicted observations matching `query`."""
+    inputs = jax.tree.map(lambda x: x.data, inputs, is_leaf=cx.is_field)
+    # TODO(dkochkov): make dummy axis expansion part of the mapping specs.
+    maybe_add_dummy = lambda x: jnp.expand_dims(x, 0) if x.ndim == 2 else x
+    inputs = jax.tree.map(maybe_add_dummy, inputs)
+    predictions = self.coordinate_mapping(inputs)
+    # TODO(dkochkov): move squeezing to the mapping.
+    predictions = {
+        k: jnp.squeeze(v, axis=0) if v.shape[0] == 1 else v
+        for k, v in predictions.items()
+    }
+    is_coordinate = lambda x: isinstance(x, cx.Coordinate)
+    prediction_keys = list(predictions.keys())
+    observations = {}
+    coord = self.coordinate_mapping.coords
+    for k, v in query.items():
+      if k not in prediction_keys:
+        raise ValueError(f'Query contains {k=} not in {prediction_keys}')
+      if not is_coordinate(v):
+        raise ValueError(
+            'FixedLearnedObservationOperator only supports coordinate queries,'
+            f' got {v}'
+        )
+      if (coord == v) or (coord.horizontal == v):
+        observations[k] = cx.wrap(predictions[k], v)
+      else:
+        raise ValueError(f'Query ({k}, {v}) is not compatible with {coord=}')
     return observations

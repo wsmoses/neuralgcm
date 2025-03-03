@@ -451,6 +451,7 @@ def read_timeseries(
   Returns:
     grain.IterDataset where each element is a pytree of arrays.
   """
+
   if read_options is None:
     read_options = grain.ReadOptions(num_threads=16, prefetch_buffer_size=32)
 
@@ -563,9 +564,11 @@ def read_shuffled_shard(
       assert reader.examples_per_block == 1
 
   if read_options is None:
+    # We already have multiple threads inside the source, so we don't need to
+    # use Grain's internal concurrency.
     buffer_blocks = 2 * round(buffer_size_in_bytes / reader.bytes_per_block)
     read_options = grain.ReadOptions(
-        num_threads=16, prefetch_buffer_size=buffer_blocks
+        num_threads=1, prefetch_buffer_size=buffer_blocks
     )
 
   rng = np.random.default_rng(seed)

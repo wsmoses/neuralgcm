@@ -118,47 +118,57 @@ class CoordinateSystemsTest(parameterized.TestCase):
           testcase_name='two_selected_axes_consolidate_after',
           coordinates=(
               coordax.SelectedAxis(PRODUCT_XY, axis=0),
-              coordax.SelectedAxis(coordax.SizedAxis('x', 4), axis=0),
+              coordax.SelectedAxis(coordax.SizedAxis('z', 4), axis=0),
           ),
           expected=(
               coordax.SelectedAxis(PRODUCT_XY, axis=0),
-              coordax.SizedAxis('x', 4),
+              coordax.SizedAxis('z', 4),
           ),
       ),
       dict(
           testcase_name='two_selected_axes_consolidate_before',
           coordinates=(
-              coordax.SelectedAxis(coordax.SizedAxis('x', 4), axis=0),
+              coordax.SelectedAxis(coordax.SizedAxis('z', 4), axis=0),
               coordax.SelectedAxis(PRODUCT_XY, axis=0),
           ),
           expected=(
-              coordax.SizedAxis('x', 4),
+              coordax.SizedAxis('z', 4),
               coordax.SelectedAxis(PRODUCT_XY, axis=0),
           ),
       ),
       dict(
           testcase_name='skip_scalars',
           coordinates=(
-              coordax.SizedAxis('x', 4),
+              coordax.SizedAxis('w', 4),
               coordax.Scalar(),
               coordax.Scalar(),
               coordax.SelectedAxis(PRODUCT_XY, axis=0),
               coordax.compose_coordinates(
-                  coordax.SizedAxis('z', 3),
-                  coordax.Scalar()),
+                  coordax.SizedAxis('z', 3), coordax.Scalar()
+              ),
           ),
           expected=(
-              coordax.SizedAxis('x', 4),
+              coordax.SizedAxis('w', 4),
               coordax.SelectedAxis(PRODUCT_XY, axis=0),
               coordax.SizedAxis('z', 3),
           ),
       ),
   )
-  def test_consolidate_coordinates(self, coordinates, expected):
-    actual = coordinate_systems.consolidate_coordinates(*coordinates)
+  def test_canonicalize_coordinates(self, coordinates, expected):
+    actual = coordinate_systems.canonicalize(*coordinates)
     self.assertEqual(actual, expected)
 
   @parameterized.named_parameters(
+      dict(
+          testcase_name='empty',
+          coordinates=(),
+          expected=coordax.Scalar(),
+      ),
+      dict(
+          testcase_name='single_coordinate',
+          coordinates=(coordax.SizedAxis('x', 2),),
+          expected=coordax.SizedAxis('x', 2),
+      ),
       dict(
           testcase_name='selected_axes_compoents_merge',
           coordinates=(
@@ -223,8 +233,8 @@ class CoordinateSystemsTest(parameterized.TestCase):
           )),
       ),
   )
-  def test_compose_coordinates(self, coordinates, expected):
-    actual = coordinate_systems.compose_coordinates(*coordinates)
+  def test_compose(self, coordinates, expected):
+    actual = coordinate_systems.compose(*coordinates)
     self.assertEqual(actual, expected)
 
   def test_dummy_axis(self):
@@ -241,7 +251,6 @@ class CoordinateSystemsTest(parameterized.TestCase):
     self.assertEqual(axis.sizes, {})
     self.assertEqual(axis.fields, {})
     self.assertEqual(axis.to_xarray(), {})
-
 
   def test_dummy_axis_cartesian_product(self):
     x = coordax.DummyAxis(name='x', size=2)

@@ -25,6 +25,7 @@ from neuralgcm.experimental.coordax.coordinate_systems import (
     NoCoordinateMatch as NoCoordinateMatch,
     SelectedAxis as SelectedAxis,
     compose as compose_coordinates,
+    from_xarray as coordinates_from_xarray,
 )
 from neuralgcm.experimental.coordax.fields import (
     Field as Field,

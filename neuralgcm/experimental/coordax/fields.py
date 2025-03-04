@@ -291,43 +291,8 @@ class Field:
       A coordax.Field object with the same data as the input xarray.DataArray.
     """
     field = cls(data_array.data)
-    dims = data_array.dims
-    coords = []
-
-    if not all(isinstance(dim, str) for dim in dims):
-      raise TypeError(
-          'can only convert DataArray objects with string dimensions to Field'
-      )
-    dims = typing.cast(tuple[str, ...], dims)
-
-    if not coord_types:
-      raise ValueError('coord_types must be non-empty')
-
-    def get_next_match():
-      reasons = []
-      for coord_type in coord_types:
-        result = coord_type.from_xarray(dims, data_array.coords)
-        if isinstance(result, Coordinate):
-          return result
-        assert isinstance(result, coordinate_systems.NoCoordinateMatch)
-        coord_name = coord_type.__module__ + '.' + coord_type.__name__
-        reasons.append(f'{coord_name}: {result.reason}')
-
-      reasons_str = '\n'.join(reasons)
-      raise ValueError(
-          'failed to convert xarray.DataArray to coordax.Field, because no '
-          f'coordinate type matched the dimensions starting with {dims}:\n'
-          f'{data_array}\n\n'
-          f'Reasons why coordinate matching failed:\n{reasons_str}'
-      )
-
-    while dims:
-      coord = get_next_match()
-      coords.append(coord)
-      assert coord.ndim > 0  # dimensions will shrink by at least one
-      dims = dims[coord.ndim :]
-
-    return field.tag(*coords)
+    coord = coordinate_systems.from_xarray(data_array, coord_types)
+    return field.tag(coord)
 
   def to_xarray(self) -> xarray.DataArray:
     """Convert this Field to an xarray.DataArray with NumPy array data.

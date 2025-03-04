@@ -23,6 +23,7 @@ import collections
 from collections.abc import Iterable
 import dataclasses
 import itertools
+import typing
 from typing import Any, Self, TYPE_CHECKING, TypeAlias, TypeVar
 
 import jax
@@ -505,3 +506,59 @@ def compose(*coordinates: Coordinate) -> Coordinate:
       return product.coordinates[0]
     case _:
       return product
+
+
+def from_xarray(
+    data_array: xarray.DataArray,
+    coord_types: Sequence[type[Coordinate]] = (LabeledAxis, DummyAxis),
+) -> Coordinate:
+  """Convert the coordinates of an xarray.DataArray into a coordax.Coordinate.
+
+  Args:
+    data_array: xarray.DataArray whose coordinates should be converted.
+    coord_types: sequence of coordax.Coordinate subclasses with `from_xarray`
+      methods defined. The first coordinate class that returns a coordinate
+      object (indicating a match) will be used. By default, coordinates will
+      use only generic coordax.LabeledAxis objects.
+
+  Returns:
+    A coordax.Coordinate object representing the coordinates of the input
+    DataArray.
+  """
+  dims = data_array.dims
+  coords = []
+
+  if not all(isinstance(dim, str) for dim in dims):
+    raise TypeError(
+        'can only convert DataArray objects with string dimensions to Field'
+    )
+  dims = typing.cast(tuple[str, ...], dims)
+
+  if not coord_types:
+    raise ValueError('coord_types must be non-empty')
+
+  def get_next_match():
+    reasons = []
+    for coord_type in coord_types:
+      result = coord_type.from_xarray(dims, data_array.coords)
+      if isinstance(result, Coordinate):
+        return result
+      assert isinstance(result, NoCoordinateMatch)
+      coord_name = coord_type.__module__ + '.' + coord_type.__name__
+      reasons.append(f'{coord_name}: {result.reason}')
+
+    reasons_str = '\n'.join(reasons)
+    raise ValueError(
+        'failed to convert xarray.DataArray to coordax.Field, because no '
+        f'coordinate type matched the dimensions starting with {dims}:\n'
+        f'{data_array}\n\n'
+        f'Reasons why coordinate matching failed:\n{reasons_str}'
+    )
+
+  while dims:
+    coord = get_next_match()
+    coords.append(coord)
+    assert coord.ndim > 0  # dimensions will shrink by at least one
+    dims = dims[coord.ndim :]
+
+  return compose(*coords)

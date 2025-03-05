@@ -27,13 +27,13 @@ class NormalizationsTest(parameterized.TestCase):
   def test_stream_norm_close_to_identity_at_init(self):
     # we get exact identity if epsilon is zero.
     norm = normalizations.StreamNorm((2,), feature_axes=(-2,), epsilon=0.0)
-    inputs = np.random.normal(size=(10, 2, 2))
+    inputs = np.random.RandomState(0).normal(size=(10, 2, 2))
     outputs = norm(inputs, update_stats=False)
     np.testing.assert_allclose(outputs, inputs)
 
   def test_stream_norm_first_step_estimate(self):
     norm = normalizations.StreamNorm(epsilon=0.0)
-    inputs = np.random.normal(size=(10, 2, 2))
+    inputs = np.random.RandomState(0).normal(size=(10, 2, 2))
     _ = norm(inputs)
     mean, var = norm.stats()
     np.testing.assert_allclose(mean, np.mean(inputs))
@@ -41,7 +41,7 @@ class NormalizationsTest(parameterized.TestCase):
 
   def test_stream_norm_normalizes_fixed_inputs(self):
     norm = normalizations.StreamNorm(epsilon=0.0)
-    inputs = np.random.normal(size=(10, 2, 2))
+    inputs = np.random.RandomState(0).normal(size=(10, 2, 2))
     output = norm(inputs)
     np.testing.assert_allclose(np.mean(output), 0.0, atol=1e-6)
     np.testing.assert_allclose(np.var(output, ddof=1), 1.0, atol=1e-6)

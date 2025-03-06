@@ -23,7 +23,6 @@ import jax
 import jax.numpy as jnp
 from neuralgcm.experimental import coordax as cx
 from neuralgcm.experimental import coordinates
-from neuralgcm.experimental import nnx_compat
 from neuralgcm.experimental import parallelism
 from neuralgcm.experimental import typing
 from neuralgcm.experimental import units
@@ -84,15 +83,22 @@ class RandomProcessModule(nnx.Module, abc.ABC):
     return tuple()
 
 
-@nnx_compat.dataclass
 class UniformUncorrelated(RandomProcessModule):
   """Scalar time-independent uniform random process."""
 
-  coords: cx.Coordinate
-  minval: float
-  maxval: float
+  def __init__(
+      self,
+      coords: cx.Coordinate,
+      minval: float,
+      maxval: float,
+      rngs: nnx.Rngs,
+  ):
+    self.coords = coords
+    self.minval = minval
+    self.maxval = maxval
+    self.state = RandomnessValue(self.unconditional_sample(rngs.params()))
 
-  def unconditional_sample(self, rng):
+  def unconditional_sample(self, rng: jax.Array) -> typing.Randomness:
     key, state_rng = jax.random.split(rng)
     value = jax.random.uniform(
         key,
@@ -116,16 +122,60 @@ class UniformUncorrelated(RandomProcessModule):
         maxval=self.maxval,
         shape=self.coords.shape,
     )
-    next_state = typing.Randomness(
+    self.state.value = typing.Randomness(
         state.prng_key, state.prng_step + 1, new_value
     )
-    self.state = RandomnessValue(next_state)
     return self.state.value
 
-  def set_state(self, state: typing.Randomness):
-    self.state = RandomnessValue(state)
+  def state_values(
+      self,
+      coords: cx.Coordinate | None = None,
+      state: typing.Randomness | None = None,
+  ) -> cx.Field:
+    if state is None:
+      state = self.state.value
+    if coords is None:
+      coords = self.coords
+    if coords != self.coords:
+      raise ValueError(
+          f'Interpolation is not supported yet: {coords=} {self.coords=}'
+      )
+    return cx.wrap(state.core, coords)
 
-  def get_state(self) -> typing.Randomness:
+
+class NormalUncorrelated(RandomProcessModule):
+  """Time-independent normal random process."""
+
+  def __init__(
+      self,
+      coords: cx.Coordinate,
+      mean: float,
+      std: float,
+      rngs: nnx.Rngs,
+  ):
+    self.coords = coords
+    self.mean = mean
+    self.std = std
+    self.state = RandomnessValue(self.unconditional_sample(rngs.params()))
+
+  def unconditional_sample(self, rng: typing.PRNGKeyArray) -> typing.Randomness:
+    key, state_rng = jax.random.split(rng)
+    value = jax.random.normal(key, shape=self.coords.shape)
+    value = self.mean + self.std * value
+    self.state = RandomnessValue(typing.Randomness(state_rng, 0, value))
+    return self.state.value
+
+  def advance(
+      self,
+      state: typing.Randomness | None = None,
+  ) -> typing.Randomness:
+    if state is None:
+      state = self.state.value
+    key = _get_advance_prng_key(state)
+    new_value = self.mean + self.std * jax.random.normal(key, self.coords.shape)
+    self.state.value = typing.Randomness(
+        state.prng_key, state.prng_step + 1, new_value
+    )
     return self.state.value
 
   def state_values(

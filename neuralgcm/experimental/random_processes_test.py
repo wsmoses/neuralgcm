@@ -13,6 +13,7 @@
 # limitations under the License.
 """Tests that random processes generate values with expected stats."""
 
+import math
 from absl.testing import absltest
 from absl.testing import parameterized
 import chex
@@ -570,6 +571,7 @@ class BatchGaussianRandomFieldTest(BaseSphericalHarmonicRandomProcessTest):
   def test_init_under_jit(self):
     """Tests that random process can be initialized under jit."""
     grid = coordinates.LonLatGrid.T42()
+
     @nnx.jit
     def build_grf():
       grf = random_processes.BatchGaussianRandomField(
@@ -586,6 +588,88 @@ class BatchGaussianRandomFieldTest(BaseSphericalHarmonicRandomProcessTest):
 
     grf = build_grf()
     self.assertEqual(grf.n_fields, 2)
+
+
+class UncorrelatedRandomFieldsTest(parameterized.TestCase):
+  """Tests Uncorrelated random processes."""
+
+  @parameterized.named_parameters(
+      dict(
+          testcase_name='small_range',
+          coord=coordinates.LonLatGrid.T42(),
+          minval=-2,
+          maxval=2,
+      ),
+      dict(
+          testcase_name='large_range',
+          coord=coordinates.LonLatGrid.T21(),
+          minval=0,
+          maxval=10_000,
+      ),
+  )
+  def test_uniform_uncorrelated_stats(
+      self,
+      coord,
+      minval,
+      maxval,
+  ):
+    rng = nnx.Rngs(0)
+    uniform = random_processes.UniformUncorrelated(coord, minval, maxval, rng)
+    with self.subTest('unconditional_sample_stats'):
+      sample = uniform.state_values().data
+      mean_std_err = (maxval - minval) / np.sqrt(12 * math.prod(coord.shape))
+      np.testing.assert_allclose(
+          sample.mean(), (minval + maxval) / 2, atol=(3 * mean_std_err)
+      )
+      self.assertLess(sample.max(), maxval)
+      self.assertGreaterEqual(sample.min(), minval)
+    with self.subTest('advance_is_uncorrelated_from_initial_state'):
+      sample = uniform.state_values().data
+      uniform.advance()
+      advanced_sample = uniform.state_values().data
+      corr = tfp.stats.correlation(
+          sample, advanced_sample, sample_axis=(0, 1), event_axis=None
+      )
+      standard_error = 2 / np.sqrt(math.prod(sample.shape))
+      np.testing.assert_array_less(corr, 4 * standard_error)
+
+  @parameterized.named_parameters(
+      dict(
+          testcase_name='small_variance',
+          coord=coordinates.LonLatGrid.T42(),
+          mean=0.4,
+          std=1.0,
+      ),
+      dict(
+          testcase_name='large_variance',
+          coord=coordinates.LonLatGrid.T21(),
+          mean=20,
+          std=5_000,
+      ),
+  )
+  def test_normal_uncorrelated_stats(
+      self,
+      coord,
+      mean,
+      std,
+  ):
+    rng = nnx.Rngs(0)
+    normal = random_processes.NormalUncorrelated(coord, mean, std, rng)
+    with self.subTest('unconditional_sample_stats'):
+      sample = normal.state_values().data
+      mean_std_err = std / np.sqrt(math.prod(coord.shape))
+      std_std_err = std / np.sqrt(2 * math.prod(coord.shape))
+      np.testing.assert_allclose(sample.mean(), mean, atol=(3 * mean_std_err))
+      np.testing.assert_allclose(sample.std(), std, atol=(3 * std_std_err))
+    with self.subTest('advance_is_uncorrelated_from_initial_state'):
+      sample = normal.state_values().data
+      normal.advance()
+      advanced_sample = normal.state_values().data
+      corr = tfp.stats.correlation(
+          sample, advanced_sample, sample_axis=(0, 1), event_axis=None
+      )
+      standard_error = 2 / np.sqrt(math.prod(sample.shape))
+      np.testing.assert_array_less(corr, 4 * standard_error)
 
 
 if __name__ == '__main__':

@@ -419,7 +419,7 @@ class DummyAxis(Coordinate):
     return {}
 
   def __repr__(self):
-    return f'coordax.DummyAxis({self.name!r})'
+    return f'coordax.DummyAxis({self.name!r}, size={self.size})'
 
   @classmethod
   def from_xarray(

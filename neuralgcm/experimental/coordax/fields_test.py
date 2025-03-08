@@ -451,7 +451,7 @@ class FieldTest(parameterized.TestCase):
             data=array([0, 1, 2, 3]),
             dims=('x',),
         )
-        coordax.DummyAxis('x')""")
+        coordax.DummyAxis('x', size=5)""")
 
     with self.assertRaisesWithLiteralMatch(ValueError, expected_messsage):
       coordax.Field(np.arange(4)).tag(axis)

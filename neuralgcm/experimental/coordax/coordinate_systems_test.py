@@ -243,6 +243,7 @@ class CoordinateSystemsTest(parameterized.TestCase):
     self.assertEqual(axis.shape, (0,))
     self.assertEqual(axis.sizes, {'x': 0})
     self.assertEqual(axis.fields, {})
+    self.assertEqual(repr(axis), "coordax.DummyAxis('x', size=0)")
     self.assertEqual(axis.to_xarray(), {})
 
     axis = coordax.DummyAxis(name=None, size=10)
@@ -250,6 +251,7 @@ class CoordinateSystemsTest(parameterized.TestCase):
     self.assertEqual(axis.shape, (10,))
     self.assertEqual(axis.sizes, {})
     self.assertEqual(axis.fields, {})
+    self.assertEqual(repr(axis), "coordax.DummyAxis(None, size=10)")
     self.assertEqual(axis.to_xarray(), {})
 
   def test_dummy_axis_cartesian_product(self):

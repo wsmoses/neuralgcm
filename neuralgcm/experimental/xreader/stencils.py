@@ -210,3 +210,24 @@ def build_sampling_slices(
       slice(start, stop, stride)
       for start, stop in zip(starts.tolist(), stops.tolist())
   ]
+
+
+def valid_origin_points(
+    source_points: np.typing.ArrayLike, stencil: Stencil
+) -> np.ndarray:
+  """Get all possible sample origins for a given stencil."""
+
+  source_points = np.asarray(source_points)
+
+  min_origin = source_points[0] - stencil.start
+  if not stencil.includes_start:
+    min_origin -= stencil.step
+
+  max_origin = source_points[-1] - stencil.stop
+  if not stencil.includes_stop:
+    max_origin += stencil.step
+
+  valid_origins = source_points[
+      (source_points >= min_origin) & (source_points <= max_origin)
+  ]
+  return valid_origins

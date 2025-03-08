@@ -218,6 +218,47 @@ class StencilsTest(parameterized.TestCase):
           stencil=stencils.Stencil(0, 2, 1),
       )
 
+  @parameterized.parameters(
+      dict(
+          source_points=[0, 1, 2, 3, 4],
+          stencil=stencils.Stencil(start=-1, stop=1, step=1, closed='both'),
+          expected=[1, 2, 3],
+      ),
+      dict(
+          source_points=[0, 1, 2, 3, 4],
+          stencil=stencils.Stencil(start=-2, stop=2, step=1, closed='both'),
+          expected=[2],
+      ),
+      dict(
+          source_points=[0, 2, 4, 6, 8],
+          stencil=stencils.Stencil(start=-2, stop=2, step=2, closed='both'),
+          expected=[2, 4, 6],
+      ),
+      dict(
+          source_points=np.arange(10),
+          stencil=stencils.Stencil(start=-2, stop=4, step=2, closed='left'),
+          expected=[2, 3, 4, 5, 6, 7],
+      ),
+      dict(
+          source_points=[0, 1, 2, 3, 4],
+          stencil=stencils.Stencil(start=-1, stop=1, step=1, closed='left'),
+          expected=[1, 2, 3, 4],
+      ),
+      dict(
+          source_points=[0, 1, 2, 3, 4],
+          stencil=stencils.Stencil(start=-1, stop=1, step=1, closed='right'),
+          expected=[0, 1, 2, 3],
+      ),
+      dict(
+          source_points=[0, 1, 2, 3, 4],
+          stencil=stencils.Stencil(start=-1, stop=1, step=1, closed='neither'),
+          expected=[0, 1, 2, 3, 4],
+      ),
+  )
+  def test_valid_origin_points(self, source_points, stencil, expected):
+    actual = stencils.valid_origin_points(source_points, stencil)
+    np.testing.assert_array_equal(actual, expected)
+
 
 if __name__ == '__main__':
   absltest.main()

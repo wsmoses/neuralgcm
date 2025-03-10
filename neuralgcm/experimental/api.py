@@ -213,7 +213,7 @@ class ForecastSystem(nnx.Module, abc.ABC):
         out_axes=(nnx.Carry, 0),
     )
     (_, final_state), intermediates = unroll_fn((self, state))
-    steps = (int(start_with_input) + np.arange(outer_steps)) * inner_steps
+    steps = (int(not start_with_input) + np.arange(outer_steps))
     time = coordinates.TimeDelta(steps * timedelta)
     intermediates = cx.tag(intermediates, time)
     return final_state, intermediates

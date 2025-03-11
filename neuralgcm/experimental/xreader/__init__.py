@@ -15,6 +15,12 @@
 # Note: import <name> as <name> is required for names to be exported.
 # See PEP 484 & https://github.com/jax-ml/jax/issues/7570
 # pylint: disable=g-multiple-import,useless-import-alias,g-importing-member
+from neuralgcm.experimental.xreader.iterators import (
+    ArrayUnflattener as ArrayUnflattener,
+    CoordaxUnflattener as CoordaxUnflattener,
+    evaluation_iterator as evaluation_iterator,
+    training_iterator as training_iterator,
+)
 from neuralgcm.experimental.xreader.reader import (
     read_shuffled_shard as read_shuffled_shard,
     read_timeseries as read_timeseries,
@@ -22,4 +28,8 @@ from neuralgcm.experimental.xreader.reader import (
 from neuralgcm.experimental.xreader.samplers import (
     Windower as Windower,
     WindowerAtOffsets as WindowerAtOffsets,
+)
+from neuralgcm.experimental.xreader.stencils import (
+    Stencil as Stencil,
+    TimeStencil as TimeStencil,
 )

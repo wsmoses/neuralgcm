@@ -91,16 +91,16 @@ class StencilsTest(parameterized.TestCase):
       dict(value='1days', expected=np.timedelta64(1, 'D')),
       dict(value='24 hours', expected=np.timedelta64(24, 'h')),
   )
-  def test_parse_timedelta_string(self, value, expected):
-    self.assertEqual(stencils._parse_timedelta_string(value), expected)
+  def test_to_timedelta64(self, value, expected):
+    self.assertEqual(stencils._to_timedelta64(value), expected)
 
-  def test_parse_timedelta_string_invalid(self):
+  def test_to_timedelta64_invalid(self):
     with self.assertRaisesRegex(ValueError, 'invalid time delta string'):
-      stencils._parse_timedelta_string('invalid')
+      stencils._to_timedelta64('invalid')
 
-  def test_parse_timedelta_string_invalid_unit(self):
+  def test_to_timedelta64_invalid_unit(self):
     with self.assertRaisesRegex(ValueError, 'unsupported time unit'):
-      stencils._parse_timedelta_string('1w')
+      stencils._to_timedelta64('1w')
 
   @parameterized.parameters(
       dict(

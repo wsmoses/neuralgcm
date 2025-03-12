@@ -113,7 +113,9 @@ def _normalize_time_unit(unit: str):
     raise ValueError(f'unsupported time unit: {unit!r}')
 
 
-def _parse_timedelta_string(value: str) -> np.timedelta64:
+def _to_timedelta64(value: str | np.timedelta64) -> np.timedelta64:
+  if isinstance(value, np.timedelta64):
+    return value
   match = re.match(r'([+-]?\d+) ?([a-zA-Z]+)', value)
   if not match:
     raise ValueError(f'invalid time delta string: {value}')
@@ -131,11 +133,17 @@ class TimeStencil(Stencil[np.timedelta64]):
   TimeStencil(start='-9 hours', stop='3 hours', step='1 hours', closed='both')
   """
 
-  def __init__(self, start: str, stop: str, step: str, closed: Closed = 'left'):
+  def __init__(
+      self,
+      start: str | np.timedelta64,
+      stop: str | np.timedelta64,
+      step: str | np.timedelta64,
+      closed: Closed = 'left',
+  ):
     super().__init__(
-        _parse_timedelta_string(start),
-        _parse_timedelta_string(stop),
-        _parse_timedelta_string(step),
+        _to_timedelta64(start),
+        _to_timedelta64(stop),
+        _to_timedelta64(step),
         closed=closed,
     )
 

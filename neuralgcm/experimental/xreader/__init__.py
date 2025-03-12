@@ -30,6 +30,7 @@ from neuralgcm.experimental.xreader.samplers import (
 from neuralgcm.experimental.xreader.stencils import (
     Stencil as Stencil,
     TimeStencil as TimeStencil,
+    valid_origin_points as valid_origin_points,
 )
 from neuralgcm.experimental.xreader.unflatteners import (
     ArrayUnflattener as ArrayUnflattener,

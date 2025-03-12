@@ -16,8 +16,6 @@
 # See PEP 484 & https://github.com/jax-ml/jax/issues/7570
 # pylint: disable=g-multiple-import,useless-import-alias,g-importing-member
 from neuralgcm.experimental.xreader.iterators import (
-    ArrayUnflattener as ArrayUnflattener,
-    CoordaxUnflattener as CoordaxUnflattener,
     evaluation_iterator as evaluation_iterator,
     training_iterator as training_iterator,
 )
@@ -32,4 +30,9 @@ from neuralgcm.experimental.xreader.samplers import (
 from neuralgcm.experimental.xreader.stencils import (
     Stencil as Stencil,
     TimeStencil as TimeStencil,
+)
+from neuralgcm.experimental.xreader.unflatteners import (
+    ArrayUnflattener as ArrayUnflattener,
+    CoordaxUnflattener as CoordaxUnflattener,
+    Unflattener as Unflattener,
 )

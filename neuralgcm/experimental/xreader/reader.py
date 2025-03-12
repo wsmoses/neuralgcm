@@ -15,8 +15,6 @@
 
 from __future__ import annotations
 
-import abc
-from collections.abc import Sequence
 import concurrent.futures
 import dataclasses
 import functools
@@ -26,6 +24,7 @@ from typing import Any, Callable, TYPE_CHECKING, TypeVar
 
 import grain.python as grain
 from neuralgcm.experimental.xreader import samplers
+from neuralgcm.experimental.xreader import unflatteners
 import numpy as np
 import xarray
 
@@ -120,67 +119,6 @@ def to_cpu_array(data: np.ndarray) -> np.ndarray | jdt.Datetime | jdt.Timedelta:
   return converter(data)
 
 
-class Unflattener(abc.ABC):
-  """Converts a list of arrays into a pytree of arrays."""
-
-  @abc.abstractmethod
-  def build(self, source: xarray.Dataset) -> Callable[[list[Any]], PyTree]:
-    """Returns a function that unflattens a list of arrays into a pytree."""
-    raise NotImplementedError
-
-
-def _unflatten_arrays(names: list[str], arrays: list[Any]) -> dict[str, Any]:
-  assert len(arrays) == len(names)
-  return dict(zip(names, arrays))
-
-
-class ArrayUnflattener(Unflattener):
-  """Unflatten into a dict of arrays."""
-
-  def build(self, source: xarray.Dataset) -> Callable[[list[Any]], PyTree]:
-    names = list(source.keys())
-    return functools.partial(_unflatten_arrays, names)
-
-
-def _unflatten_fields(
-    sample_dim: str, coords: dict[str, coordax.Coordinate], arrays: list[Any]
-) -> dict[str, coordax.Field]:
-  from neuralgcm.experimental import coordax  # pylint: disable=g-import-not-at-top
-
-  # TODO(shoyer): consider removing sample_dim from coords, rather than tagging
-  # followed by untagging.
-  return {
-      name: coordax.Field(array).tag(coord).untag(sample_dim)
-      for (name, coord), array in zip(coords.items(), arrays)
-  }
-
-
-@dataclasses.dataclass
-class CoordaxUnflattener(Unflattener):
-  """Unflatten into a dict of coordax.Field objects."""
-
-  coord_types: Sequence[type[coordax.Coordinate]] | None = None
-
-  def build(self, source: xarray.Dataset) -> Callable[[list[Any]], PyTree]:
-    from neuralgcm.experimental import coordax  # pylint: disable=g-import-not-at-top
-
-    # sample_dim is moved to the front via transpose in _prepare_source.
-    sample_dim = next(iter(source.values())).dims[0]
-
-    # Coordax is an optional depdenncy for Xreader, so define default values for
-    # coord_types here instead of on the dataclass field.
-    coord_types = (
-        (coordax.LabeledAxis, coordax.DummyAxis)
-        if self.coord_types is None
-        else self.coord_types
-    )
-    coords = {}
-    for k, data_array in source.items():
-      coords[k] = coordax.coordinates_from_xarray(data_array, coord_types)
-
-    return functools.partial(_unflatten_fields, sample_dim, coords)
-
-
 @dataclasses.dataclass(repr=False, eq=False)
 class _XarrayBlockSource(grain.RandomAccessDataSource[T]):
   """Grain data source for reading blocks from an xarray.Dataset."""
@@ -253,7 +191,7 @@ class _Reader:
       *,
       sample_dim: str = 'time',
       block_size_in_bytes: float = 1e8,
-      unflattener: Unflattener = ArrayUnflattener(),
+      unflattener: unflatteners.Unflattener = unflatteners.ArrayUnflattener(),
   ):
     source = _prepare_source(source, sample_dim)
     unflatten = unflattener.build(source)
@@ -297,7 +235,7 @@ def read_timeseries(
     *,
     sample_dim: str = 'time',
     num_epochs: int | None = 1,
-    unflattener: Unflattener = ArrayUnflattener(),
+    unflattener: unflatteners.Unflattener = unflatteners.ArrayUnflattener(),
     block_size_in_bytes: float = 1e8,
     read_options: grain.ReadOptions | None = None,
 ) -> grain.IterDataset:
@@ -354,7 +292,7 @@ def read_shuffled_shard(
     *,
     sample_dim: str = 'time',
     num_epochs: int | None = 1,
-    unflattener: Unflattener = ArrayUnflattener(),
+    unflattener: unflatteners.Unflattener = unflatteners.ArrayUnflattener(),
     block_size_in_bytes: float = 1e8,
     buffer_size_in_bytes: float = 1e10,
     min_buffer_blocks: float = 10,

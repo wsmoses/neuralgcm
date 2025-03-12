@@ -238,7 +238,7 @@ class ReaderTest(parameterized.TestCase):
         'foo': (('time', 'x'), np.array([[1, 2], [3, 4], [5, 6]])),
     })
     sampler = xreader.Windower(example_size=2)
-    unflattener = reader.CoordaxUnflattener()
+    unflattener = xreader.CoordaxUnflattener()
     data = xreader.read_timeseries(source, sampler, unflattener=unflattener)
     actual = [item for item in data]
     expected = [

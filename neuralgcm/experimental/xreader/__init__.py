@@ -19,14 +19,6 @@ from neuralgcm.experimental.xreader.iterators import (
     evaluation_iterator as evaluation_iterator,
     training_iterator as training_iterator,
 )
-from neuralgcm.experimental.xreader.reader import (
-    read_shuffled_shard as read_shuffled_shard,
-    read_timeseries as read_timeseries,
-)
-from neuralgcm.experimental.xreader.samplers import (
-    Windower as Windower,
-    WindowerAtOffsets as WindowerAtOffsets,
-)
 from neuralgcm.experimental.xreader.stencils import (
     Stencil as Stencil,
     TimeStencil as TimeStencil,

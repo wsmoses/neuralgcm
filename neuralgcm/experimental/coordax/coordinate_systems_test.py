@@ -153,6 +153,19 @@ class CoordinateSystemsTest(parameterized.TestCase):
               coordax.SizedAxis('z', 3),
           ),
       ),
+      dict(
+          testcase_name='multiple_dummy_supported',
+          coordinates=(
+              coordax.DummyAxis(None, 4),
+              coordax.SizedAxis('w', 4),
+              coordax.DummyAxis(None, 5),
+          ),
+          expected=(
+              coordax.DummyAxis(None, 4),
+              coordax.SizedAxis('w', 4),
+              coordax.DummyAxis(None, 5),
+          ),
+      ),
   )
   def test_canonicalize_coordinates(self, coordinates, expected):
     actual = coordinate_systems.canonicalize(*coordinates)
@@ -251,7 +264,7 @@ class CoordinateSystemsTest(parameterized.TestCase):
     self.assertEqual(axis.shape, (10,))
     self.assertEqual(axis.sizes, {})
     self.assertEqual(axis.fields, {})
-    self.assertEqual(repr(axis), "coordax.DummyAxis(None, size=10)")
+    self.assertEqual(repr(axis), 'coordax.DummyAxis(None, size=10)')
     self.assertEqual(axis.to_xarray(), {})
 
   def test_dummy_axis_cartesian_product(self):
@@ -262,6 +275,24 @@ class CoordinateSystemsTest(parameterized.TestCase):
     self.assertEqual(product.dims, ('x', None, 'z'))
     self.assertEqual(product.shape, (2, 3, 4))
     self.assertEqual(product.sizes, {'x': 2, 'z': 4})
+
+  def test_multiple_unnamed_dummy_axes_cartesian_product(self):
+    x = coordax.DummyAxis(name='x', size=2)
+    y = coordax.DummyAxis(name=None, size=3)
+    z = coordax.DummyAxis(name=None, size=4)
+    product = coordax.CartesianProduct((x, y, z))
+    self.assertEqual(product.dims, ('x', None, None))
+    self.assertEqual(product.shape, (2, 3, 4))
+    self.assertEqual(product.sizes, {'x': 2})
+
+  def test_dummy_axes_with_same_names_in_cartesian_product_raises(self):
+    x = coordax.DummyAxis(name='x', size=2)
+    y = coordax.DummyAxis(name='x', size=3)
+    with self.assertRaisesWithLiteralMatch(
+        ValueError,
+        "coordinates contain repeated_dims=['x']",
+    ):
+      coordax.CartesianProduct((x, y))
 
 
 if __name__ == '__main__':

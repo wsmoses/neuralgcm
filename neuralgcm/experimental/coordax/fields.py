@@ -23,8 +23,7 @@ import collections
 import functools
 import operator
 import textwrap
-import typing
-from typing import Any, Callable, Self, TypeAlias, TypeGuard, TypeVar
+from typing import Any, Callable, Literal, Self, TypeAlias, TypeGuard, TypeVar
 
 import jax
 import jax.numpy as jnp
@@ -650,47 +649,39 @@ def is_field(value) -> TypeGuard[Field]:
   return isinstance(value, Field)
 
 
-# TODO(dkochkov): consider dropping arguments to exclude and have users use
-# untag. We can include skip_dummy or skip_positional argument to make it easy
-# to exclude positional axes.
+MissingAxes = Literal['error', 'dummy', 'skip']
+
+
 def get_coordinate(
-    field: Field,
-    indices_to_exclude: Sequence[int] = (),
-    dimensions_to_exclude: Sequence[str] = (),
-    check_excluded_dims: bool = True,
+    field: Field, *, missing_axes: MissingAxes = 'dummy'
 ) -> Coordinate:
-  """Returns a single coordinate for a field with excluded axes.
+  """Returns a single coordinate for a field.
 
   Args:
     field: coordax.Field from which the coordinate will be extracted.
-    indices_to_exclude: indices corresponding to axes to be excluded.
-    dimensions_to_exclude: dimension names corresponding to axes to be excluded.
-    check_excluded_dims: whether to check that all excluded dimensions are
-      present on the field.
+    missing_axes: controls how axes without coorinates are handled. Options are:
+
+      * ``'dummy'``: uses DummyAxis for dimensions without a coordinate.
+      * ``'skip'``: ignores dimensions without a coordinate.
+      * ``'error'``: raises if dimensions without a coordinate are present.
 
   Returns:
-    Coordinate associated with the non-excluded axes of the `field`.
+    Coordinate associated with the `field`.
   """
-  ndim = field.ndim
-  dims = field.dims
-  for axis in indices_to_exclude:
-    if axis < -ndim or axis >= ndim:
-      raise ValueError(f'invalid axis {axis} for ndim {ndim}')
-  normalize_idx = lambda idx: idx if idx >= 0 else idx + ndim
-  indices_to_exclude = [normalize_idx(i) for i in indices_to_exclude]
-  if not set(indices_to_exclude).issubset(set(range(ndim))):
-    raise ValueError(f'{indices_to_exclude=} must be in [{-ndim}, {ndim})')
-  if check_excluded_dims and not set(dimensions_to_exclude).issubset(set(dims)):
-    unknown_dims = set(dimensions_to_exclude).difference(set(dims))
-    raise ValueError(f'{unknown_dims=} are not in {field.dims=}')
-  coordinate_dims = [
-      d
-      for idx, d in enumerate(dims)
-      if (idx not in indices_to_exclude and d not in dimensions_to_exclude)
-  ]
-  if None in coordinate_dims:
-    raise ValueError('Cannot extract coordinate from partially labeled field')
-  return coordinate_systems.compose(*[field.axes[d] for d in coordinate_dims])
+  if missing_axes not in ('dummy', 'skip', 'error'):
+    raise ValueError(
+        'missing axes must be one of "dummy", "skip", or "error", got'
+        f' {missing_axes!r}'
+    )
+  axes = []
+  for d, s in zip(field.dims, field.shape, strict=True):
+    if d in field.axes:
+      axes.append(field.axes[d])
+    elif missing_axes == 'dummy':
+      axes.append(coordinate_systems.DummyAxis(d, s))
+    elif missing_axes == 'error':
+      raise ValueError(f'{field.dims=} has unnamed dims and {missing_axes=}')
+  return coordinate_systems.compose(*axes)
 
 
 PyTree = Any

@@ -237,7 +237,9 @@ def _expand_coordinates(*coordinates: Coordinate) -> tuple[Coordinate, ...]:
   return tuple(expanded)
 
 
-def _consolidate_coordinates(*coordinates: Coordinate) -> tuple[Coordinate, ...]:
+def _consolidate_coordinates(
+    *coordinates: Coordinate,
+) -> tuple[Coordinate, ...]:
   """Consolidates coordinates, removing SelectedAxes when possible."""
   axes = []
   result = []
@@ -282,7 +284,7 @@ def canonicalize(*coordinates: Coordinate) -> tuple[Coordinate, ...]:
   coordinates = _consolidate_coordinates(*coordinates)
   existing_dims = collections.Counter()
   for c in coordinates:
-    existing_dims.update(c.dims)
+    existing_dims.update([d for d in c.dims if d is not None])
   repeated_dims = [dim for dim, count in existing_dims.items() if count > 1]
   if repeated_dims:
     raise ValueError(f'coordinates contain {repeated_dims=}')
@@ -518,8 +520,8 @@ def from_xarray(
     data_array: xarray.DataArray whose coordinates should be converted.
     coord_types: sequence of coordax.Coordinate subclasses with `from_xarray`
       methods defined. The first coordinate class that returns a coordinate
-      object (indicating a match) will be used. By default, coordinates will
-      use only generic coordax.LabeledAxis objects.
+      object (indicating a match) will be used. By default, coordinates will use
+      only generic coordax.LabeledAxis objects.
 
   Returns:
     A coordax.Coordinate object representing the coordinates of the input

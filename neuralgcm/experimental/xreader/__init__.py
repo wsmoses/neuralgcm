@@ -24,8 +24,3 @@ from neuralgcm.experimental.xreader.stencils import (
     TimeStencil as TimeStencil,
     valid_origin_points as valid_origin_points,
 )
-from neuralgcm.experimental.xreader.unflatteners import (
-    ArrayUnflattener as ArrayUnflattener,
-    CoordaxUnflattener as CoordaxUnflattener,
-    Unflattener as Unflattener,
-)

@@ -16,15 +16,30 @@ import pickle
 
 from absl.testing import absltest
 from absl.testing import parameterized
-import chex
-from neuralgcm.experimental import coordax
+import jax
 from neuralgcm.experimental import xreader
-import neuralgcm.experimental.jax_datetime as jdt
 import numpy as np
 import xarray
 
 
-class ReaderTest(parameterized.TestCase):
+def assert_xarray_trees_identical(actual, expected):
+  """Asserts that two pytrees of xarray.Dataset are identical."""
+  actual_leaves, actual_treedef = jax.tree.flatten(
+      actual, is_leaf=lambda x: isinstance(x, xarray.Dataset)
+  )
+  expected_leaves, expected_treedef = jax.tree.flatten(
+      expected, is_leaf=lambda x: isinstance(x, xarray.Dataset)
+  )
+  if actual_treedef != expected_treedef:
+    raise ValueError(
+        f'Trees have different structures: {actual_treedef} vs'
+        f' {expected_treedef}'
+    )
+  for actual_leaf, expected_leaf in zip(actual_leaves, expected_leaves):
+    xarray.testing.assert_identical(actual_leaf, expected_leaf)
+
+
+class IteratorsTest(parameterized.TestCase):
 
   def test_evaluation_iterator(self):
     source = xarray.Dataset(
@@ -34,12 +49,21 @@ class ReaderTest(parameterized.TestCase):
     sample_origins = np.array([2, 3, 7])
     data = xreader.evaluation_iterator(source, stencil, sample_origins)
     expected = [
-        {'x': np.array([0, 2, 4]), 'time': np.array([0, 2, 4])},
-        {'x': np.array([1, 3, 5]), 'time': np.array([1, 3, 5])},
-        {'x': np.array([5, 7, 9]), 'time': np.array([5, 7, 9])},
+        xarray.Dataset(
+            {'x': ('time', np.array([0, 2, 4]))},
+            coords={'time': np.array([0, 2, 4])},
+        ),
+        xarray.Dataset(
+            {'x': ('time', np.array([1, 3, 5]))},
+            coords={'time': np.array([1, 3, 5])},
+        ),
+        xarray.Dataset(
+            {'x': ('time', np.array([5, 7, 9]))},
+            coords={'time': np.array([5, 7, 9])},
+        ),
     ]
     actual = [item for item in data]
-    chex.assert_trees_all_equal(actual, expected)
+    assert_xarray_trees_identical(actual, expected)
 
   def test_evaluation_iterator_pytree(self):
     source = {
@@ -54,20 +78,20 @@ class ReaderTest(parameterized.TestCase):
     data = xreader.evaluation_iterator(source, stencil, sample_origins)
     expected = [
         {
-            'x': {'time': np.array([-1, 0, 1])},
-            'y': {'time': np.array([0, 2])},
+            'x': xarray.Dataset(coords={'time': np.array([-1, 0, 1])}),
+            'y': xarray.Dataset(coords={'time': np.array([0, 2])}),
         },
         {
-            'x': {'time': np.array([1, 2, 3])},
-            'y': {'time': np.array([2, 4])},
+            'x': xarray.Dataset(coords={'time': np.array([1, 2, 3])}),
+            'y': xarray.Dataset(coords={'time': np.array([2, 4])}),
         },
         {
-            'x': {'time': np.array([3, 4, 5])},
-            'y': {'time': np.array([4, 6])},
+            'x': xarray.Dataset(coords={'time': np.array([3, 4, 5])}),
+            'y': xarray.Dataset(coords={'time': np.array([4, 6])}),
         },
     ]
     actual = [item for item in data]
-    chex.assert_trees_all_equal(actual, expected)
+    assert_xarray_trees_identical(actual, expected)
 
   def test_training_iterator_basic(self):
     source = xarray.Dataset(
@@ -83,21 +107,21 @@ class ReaderTest(parameterized.TestCase):
         seed=0,
     )
     expected = [
-        {
-            'x': np.array([-8, -9, -10, -11, -12]),
-            'time': np.array([8, 9, 10, 11, 12]),
-        },
-        {
-            'x': np.array([-18, -19, -20, -21, -22]),
-            'time': np.array([18, 19, 20, 21, 22]),
-        },
-        {
-            'x': np.array([-28, -29, -30, -31, -32]),
-            'time': np.array([28, 29, 30, 31, 32]),
-        },
+        xarray.Dataset(
+            {'x': ('time', np.array([-8, -9, -10, -11, -12]))},
+            coords={'time': np.array([8, 9, 10, 11, 12])},
+        ),
+        xarray.Dataset(
+            {'x': ('time', np.array([-18, -19, -20, -21, -22]))},
+            coords={'time': np.array([18, 19, 20, 21, 22])},
+        ),
+        xarray.Dataset(
+            {'x': ('time', np.array([-28, -29, -30, -31, -32]))},
+            coords={'time': np.array([28, 29, 30, 31, 32])},
+        ),
     ]
     actual = sorted([item for item in data], key=lambda x: x['time'][0].item())
-    chex.assert_trees_all_equal(actual, expected)
+    assert_xarray_trees_identical(actual, expected)
 
   @parameterized.named_parameters(
       {'testcase_name': 'only_window_shuffle', 'buffer_size_in_bytes': 100 * 8},
@@ -111,7 +135,7 @@ class ReaderTest(parameterized.TestCase):
     data = xreader.training_iterator(
         source, stencil, sample_origins, num_epochs=2, **kwargs
     )
-    actual_2x = np.concatenate([x['time'] for x in data])
+    actual_2x = np.concatenate([x['time'].data for x in data])
     expected = np.arange(100)
     np.testing.assert_array_equal(np.sort(actual_2x[:100]), expected)
     np.testing.assert_array_equal(np.sort(actual_2x[100:]), expected)
@@ -124,7 +148,7 @@ class ReaderTest(parameterized.TestCase):
     data = xreader.training_iterator(source, stencil, sample_origins)
     restored = pickle.loads(pickle.dumps(data))
     expected = np.arange(100)
-    actual = np.sort(np.concatenate([x['time'] for x in restored]))
+    actual = np.sort(np.concatenate([x['time'].data for x in restored]))
     np.testing.assert_array_equal(actual, expected)
 
   def test_training_iterator_nested(self):
@@ -132,7 +156,7 @@ class ReaderTest(parameterized.TestCase):
         'foo': xarray.Dataset(coords={'time': np.arange(100)}),
         'bar': xarray.Dataset(
             {'baz': ('time', np.arange(0, 1000, 10))},
-            coords={'time': np.arange(100)}
+            coords={'time': np.arange(100)},
         ),
     }
     stencil = {
@@ -143,23 +167,38 @@ class ReaderTest(parameterized.TestCase):
     data = xreader.training_iterator(source, stencil, sample_origins)
     expected = [
         {
-            'foo': {'time': np.array([8, 9, 10, 11, 12])},
-            'bar': {'baz': np.array([100]), 'time': np.array([10])},
+            'foo': xarray.Dataset(
+                coords={'time': np.array([8, 9, 10, 11, 12])}
+            ),
+            'bar': xarray.Dataset(
+                {'baz': ('time', np.array([100]))},
+                coords={'time': np.array([10])},
+            ),
         },
         {
-            'foo': {'time': np.array([18, 19, 20, 21, 22])},
-            'bar': {'baz': np.array([200]), 'time': np.array([20])},
+            'foo': xarray.Dataset(
+                coords={'time': np.array([18, 19, 20, 21, 22])}
+            ),
+            'bar': xarray.Dataset(
+                {'baz': ('time', np.array([200]))},
+                coords={'time': np.array([20])},
+            ),
         },
         {
-            'foo': {'time': np.array([28, 29, 30, 31, 32])},
-            'bar': {'baz': np.array([300]), 'time': np.array([30])},
+            'foo': xarray.Dataset(
+                coords={'time': np.array([28, 29, 30, 31, 32])}
+            ),
+            'bar': xarray.Dataset(
+                {'baz': ('time', np.array([300]))},
+                coords={'time': np.array([30])},
+            ),
         },
     ]
     actual = sorted(
         [item for item in data],
         key=lambda x: x['bar']['time'].item(),
     )
-    chex.assert_trees_all_equal(actual, expected)
+    assert_xarray_trees_identical(actual, expected)
 
   def test_iterator_with_datetime(self):
     times = np.arange(
@@ -173,56 +212,11 @@ class ReaderTest(parameterized.TestCase):
     data = xreader.evaluation_iterator(source, stencil, sample_origins)
     actual = [item for item in data]
     expected = [
-        {'time': jdt.to_datetime(times[0:1])},
-        {'time': jdt.to_datetime(times[1:2])},
-        {'time': jdt.to_datetime(times[2:3])},
+        xarray.Dataset(coords={'time': times[0:1]}),
+        xarray.Dataset(coords={'time': times[1:2]}),
+        xarray.Dataset(coords={'time': times[2:3]}),
     ]
-    chex.assert_trees_all_equal(actual, expected)
-
-  def test_iterator_with_timedelta(self):
-    times = np.arange(
-        np.timedelta64(1, 'D'),
-        np.timedelta64(4, 'D'),
-        np.timedelta64(1, 'D'),
-    )
-    source = xarray.Dataset(coords={'time': ('time', times)})
-    stencil = xreader.TimeStencil(
-        start='0h', stop='24h', step='24h', closed='both'
-    )
-    sample_origins = times[:2]
-    data = xreader.evaluation_iterator(source, stencil, sample_origins)
-    actual = [item for item in data]
-    expected = [
-        {'time': jdt.to_timedelta(times[0:2])},
-        {'time': jdt.to_timedelta(times[1:3])},
-    ]
-    chex.assert_trees_all_equal(actual, expected)
-
-  def test_coordax_unflattener(self):
-    source = xarray.Dataset(
-        {
-            'foo': (('time', 'x'), np.array([[1, 2], [3, 4], [5, 6]])),
-        },
-        coords={'time': np.array([0, 10, 20])},
-    )
-    stencil = xreader.Stencil(start=0, stop=10, step=10, closed='both')
-    sample_origins = np.array([0, 10])
-    unflattener = xreader.CoordaxUnflattener()
-    data = xreader.evaluation_iterator(
-        source, stencil, sample_origins, unflattener=unflattener
-    )
-    actual = [item for item in data]
-    expected = [
-        {
-            'foo': coordax.Field(np.array([[1, 2], [3, 4]]), dims=(None, 'x')),
-            'time': coordax.Field(np.array([0, 10])),
-        },
-        {
-            'foo': coordax.Field(np.array([[3, 4], [5, 6]]), dims=(None, 'x')),
-            'time': coordax.Field(np.array([10, 20])),
-        },
-    ]
-    chex.assert_trees_all_equal(actual, expected)
+    assert_xarray_trees_identical(actual, expected)
 
 
 if __name__ == '__main__':

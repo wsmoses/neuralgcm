@@ -18,19 +18,13 @@ from __future__ import annotations
 import concurrent.futures
 import dataclasses
 import functools
-import math
-from typing import Any, Callable, TYPE_CHECKING, TypeVar
+from typing import Any, Callable, TypeVar
 
 import grain.python as grain
 import jax
 from neuralgcm.experimental.xreader import stencils
-from neuralgcm.experimental.xreader import unflatteners
 import numpy as np
 import xarray
-
-if TYPE_CHECKING:
-  # pylint: disable=g-import-not-at-top,g-bad-import-order
-  import neuralgcm.experimental.jax_datetime as jdt
 
 # pylint: disable=logging-fstring-interpolation
 
@@ -47,18 +41,6 @@ if not hasattr(grain.experimental, 'WindowShuffleIterDataset'):
 T = TypeVar('T')
 
 
-def _xarray_bytes_per_element(
-    source: xarray.Dataset, exclude_dims: set[str]
-) -> int:
-  bytes_per_element = 0
-  for variable in source.values():
-    items_per_element = math.prod(
-        size for dim, size in variable.sizes.items() if dim not in exclude_dims
-    )
-    bytes_per_element += variable.dtype.itemsize * items_per_element
-  return bytes_per_element
-
-
 def _is_xarray_dataset(x: Any) -> bool:
   return isinstance(x, xarray.Dataset)
 
@@ -66,12 +48,12 @@ def _is_xarray_dataset(x: Any) -> bool:
 def _example_nbytes(
     source: xarray.Dataset | PyTree,
     stencil: stencils.Stencil | PyTree,
-    sample_dims: set[str],
+    sample_dim: str,
 ) -> int:
   """Calculate the number of elements in a single sample."""
   if not isinstance(source, xarray.Dataset):
     nbytes = jax.tree.map(
-        functools.partial(_example_nbytes, sample_dims=sample_dims),
+        functools.partial(_example_nbytes, sample_dim=sample_dim),
         source,
         stencil,
         is_leaf=_is_xarray_dataset,
@@ -79,7 +61,7 @@ def _example_nbytes(
     return sum(jax.tree.leaves(nbytes))
 
   elements_per_sample = stencil.points.size
-  bytes_per_element = _xarray_bytes_per_element(source, sample_dims)
+  bytes_per_element = source.isel({sample_dim: slice(1)}).nbytes
   return elements_per_sample * bytes_per_element
 
 
@@ -108,31 +90,12 @@ def _thread_pool_loader(max_workers: int = 100):
   return load
 
 
-@functools.cache
-def _array_converter(dtype_kind: str) -> Callable[[np.ndarray], PyTree]:
-  # NumPy dtype kinds corresponding to datetime64 and timedelta64:
-  # https://numpy.org/doc/stable/reference/generated/numpy.dtype.kind.html
-  if dtype_kind in 'mM':
-    import neuralgcm.experimental.jax_datetime as jdt  # pylint: disable=g-import-not-at-top
-
-    to_jdt = {'M': jdt.to_datetime, 'm': jdt.to_timedelta}[dtype_kind]
-    return to_jdt
-  else:
-    return lambda x: x
-
-
-def to_cpu_array(data: np.ndarray) -> np.ndarray | jdt.Datetime | jdt.Timedelta:
-  converter = _array_converter(data.dtype.kind)
-  return converter(data)
-
-
 @dataclasses.dataclass(repr=False, eq=False)
 class _XarraySliceSource(grain.RandomAccessDataSource[T]):
   """Grain data source for reading slices from an xarray.Dataset."""
 
   source: xarray.Dataset
   slices: list[slice]
-  unflatten: Callable[[list[Any]], T]
   sample_dim: str
 
   @functools.cached_property
@@ -146,9 +109,7 @@ class _XarraySliceSource(grain.RandomAccessDataSource[T]):
 
   def __getitem__(self, index):
     selection = self.source.isel({self.sample_dim: self.slices[index]})
-    loaded = self.loader(selection)
-    arrays = [to_cpu_array(x.values) for x in loaded.values()]
-    return self.unflatten(arrays)
+    return self.loader(selection)
 
   def __len__(self):
     return len(self.slices)
@@ -158,7 +119,6 @@ class _XarraySliceSource(grain.RandomAccessDataSource[T]):
     return {
         'source': self.source,
         'slices': self.slices,
-        'unflatten': self.unflatten,
         'sample_dim': self.sample_dim,
     }
 
@@ -176,7 +136,6 @@ class _XarrayBlockSource(grain.RandomAccessDataSource):
   source: xarray.Dataset
   groups: list[tuple[slice, list[slice]]]
   stencil: stencils.Stencil
-  unflatten: Callable[[list[Any]], PyTree]
   sample_dim: str
 
   @functools.cached_property
@@ -192,9 +151,7 @@ class _XarrayBlockSource(grain.RandomAccessDataSource):
     block_slice, sub_slices = self.groups[index]
     selection = self.source.isel({self.sample_dim: block_slice})
     loaded = self.loader(selection)
-    arrays = [to_cpu_array(x.values) for x in loaded.values()]
-    unflattened = self.unflatten(arrays)
-    return _BlockResult(unflattened, sub_slices)
+    return _BlockResult(loaded, sub_slices)
 
   def __len__(self) -> int:
     return len(self.groups)
@@ -204,7 +161,6 @@ class _XarrayBlockSource(grain.RandomAccessDataSource):
     return {
         'source': self.source,
         'groups': self.groups,
-        'unflatten': self.unflatten,
         'sample_dim': self.sample_dim,
     }
 
@@ -240,10 +196,6 @@ def _prepare_xarray_source(
           'source does not include variables with a'
           f' {sample_dim!r} dimension:\n{source}'
       )
-    if sample_dim in source.indexes:
-      source = source.reset_index(sample_dim)
-    if sample_dim in source.coords:
-      source = source.reset_coords(sample_dim)
     source = _drop_static_vars(source, sample_dim)
     source = source.transpose(sample_dim, ...)
     return source
@@ -265,7 +217,6 @@ def evaluation_iterator(
     sample_origins: np.ndarray,
     *,
     sample_dim: str = 'time',
-    unflattener: unflatteners.Unflattener = unflatteners.ArrayUnflattener(),
     read_options: grain.ReadOptions | None = None,
 ) -> grain.IterDataset:
   """Read a time-series xarray.Dataset into an iterator of samples.
@@ -279,12 +230,11 @@ def evaluation_iterator(
       look like.
     sample_origins: points at which to sample the time-series.
     sample_dim: name of the dimension to sample along.
-    unflattener: defines how to convert a list of arrays into a pytree.
     read_options: options to use for reading the Grain dataset. Buffer size here
       indicates the number of blocks to prefetch.
 
   Returns:
-    grain.IterDataset where each element is a pytree of arrays.
+    grain.IterDataset where each element is a sampled xarray.Dataset.
   """
   if read_options is None:
     read_options = grain.ReadOptions(num_threads=16, prefetch_buffer_size=32)
@@ -295,13 +245,12 @@ def evaluation_iterator(
 
     source = _prepare_xarray_source(source, sample_dim)
     source_points = source[sample_dim].values
-    unflatten = unflattener.build(source)
     slices = stencils.build_sampling_slices(
         source_points=source_points,
         sample_origins=sample_origins,
         stencil=stencil,
     )
-    return _XarraySliceSource(source, slices, unflatten, sample_dim)
+    return _XarraySliceSource(source, slices, sample_dim)
 
   grain_source = _PytreeSource(
       jax.tree.map(
@@ -337,15 +286,16 @@ def group_slices(
 PyTree = Any
 
 
-def _split_block(block_spec_tree) -> list[PyTree]:
+def _split_block(sample_dim: str, block_tree: PyTree) -> list[PyTree]:
+  """Apply sub_slices to each block in a pytree of _BlockResult."""
   block_leaves, outer_treedef = jax.tree.flatten(
-      block_spec_tree, is_leaf=lambda x: isinstance(x, _BlockResult)
+      block_tree, is_leaf=lambda x: isinstance(x, _BlockResult)
   )
   unflatten = functools.partial(jax.tree.unflatten, outer_treedef)
   flat_outputs = []
   for block in block_leaves:
     flat_outputs.append([
-        jax.tree.map(lambda x: x[s], block.block)  # pylint: disable=cell-var-from-loop
+        jax.tree.map(lambda x: x.isel({sample_dim: s}), block.block)  # pylint: disable=cell-var-from-loop
         for s in block.sub_slices
     ])
   out = [unflatten(zipped) for zipped in zip(*flat_outputs)]
@@ -359,7 +309,6 @@ def training_iterator(
     *,
     sample_dim: str = 'time',
     num_epochs: int | None = 1,
-    unflattener: unflatteners.Unflattener = unflatteners.ArrayUnflattener(),
     buffer_size_in_bytes: float = 1e10,
     buffer_diversity: int = 10,
     read_options: grain.ReadOptions | None = None,
@@ -380,7 +329,6 @@ def training_iterator(
     sample_dim: name of the dimension to sample along.
     num_epochs: number of epoch for which to read the dataset, or `None` to read
       indefinitely.
-    unflattener: defines how to convert a list of arrays into a pytree.
     buffer_size_in_bytes: number of bytes to store in the shuffle buffer.
     buffer_diversity: number of blocks that should be represented in the shuffle
       buffer, if more than one sample is taken from each block. Typically this
@@ -405,7 +353,7 @@ def training_iterator(
     raise ValueError('must set both or neither of shard_index and shard_count')
 
   source = _prepare_xarray_source(source, sample_dim)
-  bytes_per_example = _example_nbytes(source, stencil, {sample_dim})
+  bytes_per_example = _example_nbytes(source, stencil, sample_dim)
   shuffle_window = round(buffer_size_in_bytes / bytes_per_example)
   group_size = round(
       (buffer_size_in_bytes / buffer_diversity) / bytes_per_example
@@ -415,7 +363,6 @@ def training_iterator(
   def _build_grain_source(
       source: xarray.Dataset, stencil: stencils.Stencil
   ) -> _XarrayBlockSource:
-    unflatten = unflattener.build(source)
     source_points = source[sample_dim].values
     slices = stencils.build_sampling_slices(
         source_points=source_points,
@@ -424,7 +371,7 @@ def training_iterator(
     )
     grouped_slices = group_slices(slices, group_size)
     return _XarrayBlockSource(
-        source, grouped_slices, stencil, unflatten, sample_dim
+        source, grouped_slices, stencil, sample_dim
     )
 
   grain_source = _PytreeSource(
@@ -452,7 +399,7 @@ def training_iterator(
   dataset = dataset.shuffle(global_seed)
   dataset = dataset.repeat(num_epochs)
   dataset = dataset.to_iter_dataset(read_options=read_options)
-  dataset = dataset.map(_split_block)
+  dataset = dataset.map(functools.partial(_split_block, sample_dim))
   dataset = grain.experimental.FlatMapIterDataset(
       dataset, _UnbatchTransform(group_size)
   )

@@ -175,6 +175,66 @@ class FixedLearnedObservationOperatorTest(parameterized.TestCase):
       _ = operator.observe(inputs=self.inputs, query=query)
 
 
+class LearnedSparseScalarObservationFromNeighborsTest(parameterized.TestCase):
+  """Tests FixedLearnedObservationOperator implementation."""
+
+  def setUp(self):
+    super().setUp()
+    self.grid = coordinates.LonLatGrid.T21()
+    feature_module = pytree_transforms.LatitudeFeatures(self.grid)
+    layer_factory = functools.partial(
+        standard_layers.MlpUniform, hidden_size=6, n_hidden_layers=2
+    )
+    scalar_names = ('temperature', 'wind_speed')
+    self.operator = (
+        observation_operators.LearnedSparseScalarObservationFromNeighbors(
+            scalar_names=scalar_names,
+            features_module=feature_module,
+            grid=self.grid,
+            input_state_shapes={},  # not used by specific feature_module.
+            layer_factory=layer_factory,
+            rngs=nnx.Rngs(0),
+        )
+    )
+
+  def test_output_structure(self):
+    sparse_coord = cx.LabeledAxis('id', np.arange(7))
+    np.random.seed(0)
+    longitudes = cx.wrap(np.random.uniform(0, 360, 7), sparse_coord)
+    latitudes = cx.wrap(np.random.uniform(-90, 90, 7), sparse_coord)
+    with self.subTest('full_query'):
+      full_query = {
+          'longitude': longitudes,
+          'latitude': latitudes,
+          'temperature': sparse_coord,
+          'wind_speed': sparse_coord,
+      }
+      actual = self.operator.observe({}, full_query)
+      self.assertSetEqual(
+          set(actual.keys()),
+          {'longitude', 'latitude', 'temperature', 'wind_speed'},
+      )
+      np.testing.assert_array_equal(actual['longitude'].data, longitudes.data)
+      np.testing.assert_array_equal(actual['latitude'].data, latitudes.data)
+      self.assertEqual(cx.get_coordinate(actual['temperature']), sparse_coord)
+      self.assertEqual(cx.get_coordinate(actual['wind_speed']), sparse_coord)
+
+    with self.subTest('temperature_only_query'):
+      temperature_query = {
+          'longitude': longitudes,
+          'latitude': latitudes,
+          'temperature': sparse_coord,
+      }
+      actual = self.operator.observe({}, temperature_query)
+      self.assertSetEqual(
+          set(actual.keys()),
+          {'longitude', 'latitude', 'temperature'},
+      )
+      np.testing.assert_array_equal(actual['longitude'].data, longitudes.data)
+      np.testing.assert_array_equal(actual['latitude'].data, latitudes.data)
+      self.assertEqual(cx.get_coordinate(actual['temperature']), sparse_coord)
+
+
 if __name__ == '__main__':
   config.update('jax_traceback_filtering', 'off')
   absltest.main()

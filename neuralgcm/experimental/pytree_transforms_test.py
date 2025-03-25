@@ -25,18 +25,18 @@ from flax import nnx
 import jax
 import jax.numpy as jnp
 from neuralgcm.experimental import coordax as cx
-from neuralgcm.experimental import coordinates
-from neuralgcm.experimental import dynamic_io
-from neuralgcm.experimental import orographies
-from neuralgcm.experimental import parallelism
 from neuralgcm.experimental import pytree_mappings
 from neuralgcm.experimental import pytree_transforms
-from neuralgcm.experimental import pytree_utils
-from neuralgcm.experimental import random_processes
-from neuralgcm.experimental import standard_layers
 from neuralgcm.experimental import towers
-from neuralgcm.experimental import typing
-from neuralgcm.experimental import units
+from neuralgcm.experimental.core import coordinates
+from neuralgcm.experimental.core import dynamic_io
+from neuralgcm.experimental.core import orographies
+from neuralgcm.experimental.core import parallelism
+from neuralgcm.experimental.core import pytree_utils
+from neuralgcm.experimental.core import random_processes
+from neuralgcm.experimental.core import standard_layers
+from neuralgcm.experimental.core import typing
+from neuralgcm.experimental.core import units
 import neuralgcm.experimental.jax_datetime as jdt
 import numpy as np
 import xarray

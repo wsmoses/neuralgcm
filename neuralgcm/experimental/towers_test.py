@@ -20,8 +20,8 @@ from absl.testing import parameterized
 from flax import nnx
 import jax
 import jax.numpy as jnp
-from neuralgcm.experimental import standard_layers
 from neuralgcm.experimental import towers
+from neuralgcm.experimental.core import standard_layers
 import numpy as np
 
 

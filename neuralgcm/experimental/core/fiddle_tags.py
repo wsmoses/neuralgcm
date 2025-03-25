@@ -11,3 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+"""Collection of tags used in Fiddle configs."""
+
+import fiddle as fdl
+
+
+class SpectralAtmosphereMesh(fdl.Tag):
+  """Parallelism `Mesh` tag for spectral atmospheric models."""

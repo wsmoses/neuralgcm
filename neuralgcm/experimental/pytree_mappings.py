@@ -18,12 +18,12 @@ from typing import Callable, Protocol, Sequence
 
 from flax import nnx
 import jax
-from neuralgcm.experimental import coordinates
-from neuralgcm.experimental import parallelism
 from neuralgcm.experimental import pytree_transforms
-from neuralgcm.experimental import pytree_utils
 from neuralgcm.experimental import towers
-from neuralgcm.experimental import typing
+from neuralgcm.experimental.core import coordinates
+from neuralgcm.experimental.core import parallelism
+from neuralgcm.experimental.core import pytree_utils
+from neuralgcm.experimental.core import typing
 import neuralgcm.experimental.jax_datetime as jdt
 
 

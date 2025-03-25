@@ -37,20 +37,20 @@ from flax import nnx
 import jax
 import jax.numpy as jnp
 from neuralgcm.experimental import coordax as cx
-from neuralgcm.experimental import coordinates
-from neuralgcm.experimental import dynamic_io
 from neuralgcm.experimental import jax_datetime as jdt
 from neuralgcm.experimental import jax_solar
-from neuralgcm.experimental import nnx_compat
-from neuralgcm.experimental import normalizations
-from neuralgcm.experimental import orographies
-from neuralgcm.experimental import parallelism
-from neuralgcm.experimental import pytree_utils
-from neuralgcm.experimental import random_processes
-from neuralgcm.experimental import spatial_filters
-from neuralgcm.experimental import typing
-from neuralgcm.experimental import units
-from neuralgcm.experimental import xarray_utils
+from neuralgcm.experimental.core import coordinates
+from neuralgcm.experimental.core import dynamic_io
+from neuralgcm.experimental.core import nnx_compat
+from neuralgcm.experimental.core import normalizations
+from neuralgcm.experimental.core import orographies
+from neuralgcm.experimental.core import parallelism
+from neuralgcm.experimental.core import pytree_utils
+from neuralgcm.experimental.core import random_processes
+from neuralgcm.experimental.core import spatial_filters
+from neuralgcm.experimental.core import typing
+from neuralgcm.experimental.core import units
+from neuralgcm.experimental.core import xarray_utils
 import numpy as np
 import xarray
 

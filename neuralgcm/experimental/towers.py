@@ -20,8 +20,8 @@ from typing import Callable, Protocol, Sequence
 from flax import nnx
 import jax
 import jax.numpy as jnp
-from neuralgcm.experimental import standard_layers
-from neuralgcm.experimental import typing
+from neuralgcm.experimental.core import standard_layers
+from neuralgcm.experimental.core import typing
 
 Array = typing.Array
 

@@ -24,10 +24,10 @@ from dinosaur import xarray_utils
 import gin
 import haiku as hk
 import jax
-from neuralgcm import embeddings  # pylint: disable=unused-import
-from neuralgcm import features  # pylint: disable=unused-import
-from neuralgcm import mappings  # pylint: disable=unused-import
-from neuralgcm import physics_specifications
+from neuralgcm.legacy import embeddings  # pylint: disable=unused-import
+from neuralgcm.legacy import features  # pylint: disable=unused-import
+from neuralgcm.legacy import mappings  # pylint: disable=unused-import
+from neuralgcm.legacy import physics_specifications
 import numpy as np
 
 

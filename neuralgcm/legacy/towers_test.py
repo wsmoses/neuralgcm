@@ -18,7 +18,7 @@ from absl.testing import parameterized
 import gin
 import haiku as hk
 import jax
-from neuralgcm import towers  # pylint: disable=unused-import
+from neuralgcm.legacy import towers  # pylint: disable=unused-import
 import numpy as np
 
 

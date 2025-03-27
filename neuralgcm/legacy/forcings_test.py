@@ -25,7 +25,7 @@ from dinosaur import spherical_harmonic
 from dinosaur import xarray_utils
 import haiku as hk
 import jax
-from neuralgcm import forcings
+from neuralgcm.legacy import forcings
 import numpy as np
 
 
@@ -40,7 +40,7 @@ class ForcingsTest(parameterized.TestCase):
     n_sigma_layers = 3
     self.coords = coordinate_systems.CoordinateSystem(
         spherical_harmonic.Grid.T21(),
-        sigma_coordinates.SigmaCoordinates.equidistant(n_sigma_layers)
+        sigma_coordinates.SigmaCoordinates.equidistant(n_sigma_layers),
     )
     self.physics_specs = primitive_equations.PrimitiveEquationsSpecs.from_si()
     self.dt = self.physics_specs.nondimensionalize(10 * units.minute)
@@ -50,8 +50,9 @@ class ForcingsTest(parameterized.TestCase):
   def test_no_forcing(self):
 
     def forcing_fwd(forcing_data, sim_time):
-      forcing_fn = forcings.NoForcing(self.coords, self.dt, self.physics_specs,
-                                      self.aux_features)
+      forcing_fn = forcings.NoForcing(
+          self.coords, self.dt, self.physics_specs, self.aux_features
+      )
       return forcing_fn(forcing_data, sim_time)
 
     forcing_model = hk.without_apply_rng(hk.transform(forcing_fwd))
@@ -70,7 +71,9 @@ class ForcingsTest(parameterized.TestCase):
     with self.assertRaisesRegex(forcings.ForcingDataError, 'forcing_sim_time'):
       forcings._check_errors(err_list=['forcing_sim_time was bad'])
 
-  @mock.patch('neuralgcm.forcings._FORCING_ERRORS', new=mock.MagicMock(list))
+  @mock.patch(
+      'neuralgcm.legacy.forcings._FORCING_ERRORS', new=mock.MagicMock(list)
+  )
   def test_dynamic_data_forcing(self):
     forcings._check_errors()  # Should not raise
 
@@ -83,22 +86,31 @@ class ForcingsTest(parameterized.TestCase):
     # specify time-dependent data
     snow_temperature = 260 * np.ones(surface_shape)
     snow_depth = np.arange(n_times).reshape((n_times, 1, 1, 1)) * np.ones(
-        surface_shape)
+        surface_shape
+    )
     cloud_cover = np.zeros(volume_shape)
-    forcing_data = {'cloud_cover': cloud_cover,
-                    'snow_temperature': snow_temperature,
-                    'snow_depth': snow_depth,
-                    'sim_time': sim_time_data}
-    inputs_to_units_mapping = {'cloud_cover': 'dimensionless',
-                               'snow_temperature': 'K',
-                               'snow_depth': 'meter',
-                               'sim_time': 'dimensionless'}
+    forcing_data = {
+        'cloud_cover': cloud_cover,
+        'snow_temperature': snow_temperature,
+        'snow_depth': snow_depth,
+        'sim_time': sim_time_data,
+    }
+    inputs_to_units_mapping = {
+        'cloud_cover': 'dimensionless',
+        'snow_temperature': 'K',
+        'snow_depth': 'meter',
+        'sim_time': 'dimensionless',
+    }
 
     def forcing_fwd(forcing_data, sim_time):
       forcing_fn = forcings.DynamicDataForcing(
-          self.coords, self.dt, self.physics_specs, self.aux_features,
+          self.coords,
+          self.dt,
+          self.physics_specs,
+          self.aux_features,
           check_sim_time_errors=True,
-          inputs_to_units_mapping=inputs_to_units_mapping)
+          inputs_to_units_mapping=inputs_to_units_mapping,
+      )
       return forcing_fn(forcing_data, sim_time)
 
     forcing_model = hk.without_apply_rng(hk.transform(forcing_fwd))
@@ -110,7 +122,8 @@ class ForcingsTest(parameterized.TestCase):
       forcing = forcing_fn(params, forcing_data, sim_time)
       self.assertSetEqual(
           set(forcing.keys()),
-          {'cloud_cover', 'snow_temperature', 'snow_depth', 'sim_time'})
+          {'cloud_cover', 'snow_temperature', 'snow_depth', 'sim_time'},
+      )
       self.assertEqual(forcing['cloud_cover'].shape, (3, 64, 32))
       self.assertEqual(forcing['snow_temperature'].shape, (1, 64, 32))
       self.assertEqual(forcing['snow_depth'].shape, (1, 64, 32))
@@ -123,9 +136,11 @@ class ForcingsTest(parameterized.TestCase):
         np.testing.assert_allclose(forcing['sim_time'], sim_time)
         np.testing.assert_allclose(forcing['snow_temperature'], 260)
         nondim_snow_depth = self.physics_specs.nondimensionalize(
-            idx * units.meter)
-        np.testing.assert_allclose(forcing['snow_depth'],
-                                   nondim_snow_depth, atol=1e-6)
+            idx * units.meter
+        )
+        np.testing.assert_allclose(
+            forcing['snow_depth'], nondim_snow_depth, atol=1e-6
+        )
 
     with self.subTest('nearby sim_time'):
       for idx, sim_time in enumerate(sim_time_data):
@@ -134,18 +149,22 @@ class ForcingsTest(parameterized.TestCase):
         self.assertFalse(np.any(np.isnan(forcing['sim_time'])))
         np.testing.assert_allclose(forcing['sim_time'], sim_time)
         nondim_snow_depth = self.physics_specs.nondimensionalize(
-            idx * units.meter)
-        np.testing.assert_allclose(forcing['snow_depth'],
-                                   nondim_snow_depth, atol=1e-6)
+            idx * units.meter
+        )
+        np.testing.assert_allclose(
+            forcing['snow_depth'], nondim_snow_depth, atol=1e-6
+        )
 
     with self.subTest('in-between sim_time'):
       sim_time = 3.5 * one_hour_nondim
       forcing = forcing_fn(params, forcing_data, sim_time)
       np.testing.assert_allclose(forcing['sim_time'], sim_time_data[4])
       nondim_snow_depth = self.physics_specs.nondimensionalize(
-          forcing_data['snow_depth'][4] * units.meter)
-      np.testing.assert_allclose(forcing['snow_depth'],
-                                 nondim_snow_depth, atol=1e-6)
+          forcing_data['snow_depth'][4] * units.meter
+      )
+      np.testing.assert_allclose(
+          forcing['snow_depth'], nondim_snow_depth, atol=1e-6
+      )
 
     with self.subTest('thinned sim_time'):
       for idx, sim_time in list(enumerate(sim_time_data))[::10]:
@@ -155,9 +174,11 @@ class ForcingsTest(parameterized.TestCase):
         np.testing.assert_allclose(forcing['sim_time'], sim_time)
         np.testing.assert_allclose(forcing['snow_temperature'], 260)
         nondim_snow_depth = self.physics_specs.nondimensionalize(
-            idx * units.meter)
-        np.testing.assert_allclose(forcing['snow_depth'],
-                                   nondim_snow_depth, atol=1e-6)
+            idx * units.meter
+        )
+        np.testing.assert_allclose(
+            forcing['snow_depth'], nondim_snow_depth, atol=1e-6
+        )
 
     with self.subTest('sim_time too small'):
       sim_time = -1 * one_hour_nondim
@@ -188,20 +209,26 @@ class ForcingsTest(parameterized.TestCase):
 
       def forcing_fwd_vmap(forcing_data, sim_time):
         forcing_fn = forcings.DynamicDataForcing(
-            self.coords, self.dt, self.physics_specs, self.aux_features,
+            self.coords,
+            self.dt,
+            self.physics_specs,
+            self.aux_features,
             check_sim_time_errors=True,
-            inputs_to_units_mapping=inputs_to_units_mapping)
+            inputs_to_units_mapping=inputs_to_units_mapping,
+        )
         forcing_fn = jax.vmap(forcing_fn, in_axes=(None, 0))
         return forcing_fn(forcing_data, sim_time)
 
       forcing_vmap_model = hk.without_apply_rng(hk.transform(forcing_fwd_vmap))
       params = forcing_vmap_model.init(
-          jax.random.PRNGKey(42), forcing_data, sim_time)
+          jax.random.PRNGKey(42), forcing_data, sim_time
+      )
 
       forcing = forcing_vmap_model.apply(params, forcing_data, sim_time)
       self.assertSetEqual(
           set(forcing.keys()),
-          {'cloud_cover', 'snow_temperature', 'snow_depth', 'sim_time'})
+          {'cloud_cover', 'snow_temperature', 'snow_depth', 'sim_time'},
+      )
       self.assertEqual(forcing['cloud_cover'].shape, (2, 3, 64, 32))
       self.assertEqual(forcing['snow_temperature'].shape, (2, 1, 64, 32))
       self.assertEqual(forcing['snow_depth'].shape, (2, 1, 64, 32))
@@ -225,19 +252,27 @@ class ForcingsTest(parameterized.TestCase):
     snow_temperature = 260 * np.ones(surface_shape)
     snow_depth = np.arange(5).reshape((5, 1, 1, 1)) * np.ones(surface_shape)
     cloud_cover = np.zeros(volume_shape)
-    forcing_data = {'cloud_cover': cloud_cover,
-                    'snow_temperature': snow_temperature,
-                    'snow_depth': snow_depth,
-                    'sim_time': sim_time_data}
-    inputs_to_units_mapping = {'cloud_cover': 'dimensionless',
-                               'snow_temperature': 'K',
-                               'snow_depth': 'meter',
-                               'sim_time': 'dimensionless'}
+    forcing_data = {
+        'cloud_cover': cloud_cover,
+        'snow_temperature': snow_temperature,
+        'snow_depth': snow_depth,
+        'sim_time': sim_time_data,
+    }
+    inputs_to_units_mapping = {
+        'cloud_cover': 'dimensionless',
+        'snow_temperature': 'K',
+        'snow_depth': 'meter',
+        'sim_time': 'dimensionless',
+    }
 
     def forcing_fwd(forcing_data, sim_time):
       forcing_fn = forcings.PersistenceDataForcing(
-          self.coords, self.dt, self.physics_specs, self.aux_features,
-          inputs_to_units_mapping=inputs_to_units_mapping)
+          self.coords,
+          self.dt,
+          self.physics_specs,
+          self.aux_features,
+          inputs_to_units_mapping=inputs_to_units_mapping,
+      )
       return forcing_fn(forcing_data, sim_time)
 
     forcing_model = hk.without_apply_rng(hk.transform(forcing_fwd))
@@ -249,7 +284,8 @@ class ForcingsTest(parameterized.TestCase):
       forcing = forcing_fn(params, forcing_data, sim_time)
       self.assertSetEqual(
           set(forcing.keys()),
-          {'cloud_cover', 'snow_temperature', 'snow_depth', 'sim_time'})
+          {'cloud_cover', 'snow_temperature', 'snow_depth', 'sim_time'},
+      )
       self.assertEqual(forcing['cloud_cover'].shape, (3, 64, 32))
       self.assertEqual(forcing['snow_temperature'].shape, (1, 64, 32))
       self.assertEqual(forcing['snow_depth'].shape, (1, 64, 32))
@@ -274,28 +310,34 @@ class ForcingsTest(parameterized.TestCase):
       np.testing.assert_allclose(forcing['sim_time'], sim_time_data[0])
 
     with self.subTest('vmap sim_time'):
-      sim_time = np.array([2., 3.])
+      sim_time = np.array([2.0, 3.0])
 
       def forcing_fwd_vmap(forcing_data, sim_time):
         forcing_fn = forcings.PersistenceDataForcing(
-            self.coords, self.dt, self.physics_specs, self.aux_features,
-            inputs_to_units_mapping=inputs_to_units_mapping)
+            self.coords,
+            self.dt,
+            self.physics_specs,
+            self.aux_features,
+            inputs_to_units_mapping=inputs_to_units_mapping,
+        )
         forcing_fn = jax.vmap(forcing_fn, in_axes=(None, 0))
         return forcing_fn(forcing_data, sim_time)
 
       forcing_vmap_model = hk.without_apply_rng(hk.transform(forcing_fwd_vmap))
       params = forcing_vmap_model.init(
-          jax.random.PRNGKey(42), forcing_data, sim_time)
+          jax.random.PRNGKey(42), forcing_data, sim_time
+      )
 
       forcing = forcing_vmap_model.apply(params, forcing_data, sim_time)
       self.assertSetEqual(
           set(forcing.keys()),
-          {'cloud_cover', 'snow_temperature', 'snow_depth', 'sim_time'})
+          {'cloud_cover', 'snow_temperature', 'snow_depth', 'sim_time'},
+      )
       self.assertEqual(forcing['cloud_cover'].shape, (2, 3, 64, 32))
       self.assertEqual(forcing['snow_temperature'].shape, (2, 1, 64, 32))
       self.assertEqual(forcing['snow_depth'].shape, (2, 1, 64, 32))
       self.assertEqual(forcing['sim_time'].shape, (2,))
-      np.testing.assert_allclose(forcing['sim_time'], [0., 0.])
+      np.testing.assert_allclose(forcing['sim_time'], [0.0, 0.0])
 
     with self.subTest('single sim_time forcing_data'):
       single_forcing_data = {k: v[2:3] for k, v in forcing_data.items()}
@@ -304,7 +346,7 @@ class ForcingsTest(parameterized.TestCase):
       self.assertEqual(forcing['snow_temperature'].shape, (1, 64, 32))
       self.assertEqual(forcing['snow_depth'].shape, (1, 64, 32))
       self.assertEqual(forcing['sim_time'].shape, ())
-      np.testing.assert_allclose(forcing['sim_time'], 2.)  # 0 index value
+      np.testing.assert_allclose(forcing['sim_time'], 2.0)  # 0 index value
 
   @parameterized.parameters(
       dict(forcing_module=forcings.DynamicDataForcing),
@@ -319,10 +361,14 @@ class ForcingsTest(parameterized.TestCase):
     # specify time-dependent data
     sea_surface_temperature = 334 * np.ones(surface_shape)
 
-    forcing_data = {'sea_surface_temperature': sea_surface_temperature,
-                    'sim_time': sim_time_data}
-    inputs_to_units_mapping = {'sea_surface_temperature': 'K',
-                               'sim_time': 'dimensionless'}
+    forcing_data = {
+        'sea_surface_temperature': sea_surface_temperature,
+        'sim_time': sim_time_data,
+    }
+    inputs_to_units_mapping = {
+        'sea_surface_temperature': 'K',
+        'sim_time': 'dimensionless',
+    }
 
     with self.subTest('IncrementSSTForcingTransform'):
       forcing_transform = functools.partial(
@@ -333,9 +379,13 @@ class ForcingsTest(parameterized.TestCase):
 
       def forcing_fwd(forcing_data, sim_time):
         forcing_fn = forcing_module(
-            self.coords, self.dt, self.physics_specs, self.aux_features,
+            self.coords,
+            self.dt,
+            self.physics_specs,
+            self.aux_features,
             inputs_to_units_mapping=inputs_to_units_mapping,
-            forcing_transform=forcing_transform)
+            forcing_transform=forcing_transform,
+        )
         return forcing_fn(forcing_data, sim_time)
 
       forcing_model = hk.without_apply_rng(hk.transform(forcing_fwd))

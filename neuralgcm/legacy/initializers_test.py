@@ -18,7 +18,7 @@ from absl.testing import absltest
 from absl.testing import parameterized
 import haiku as hk
 import jax
-from neuralgcm import initializers
+from neuralgcm.legacy import initializers
 import numpy as np
 
 

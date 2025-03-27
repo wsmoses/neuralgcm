@@ -21,8 +21,7 @@ from dinosaur import typing
 import gin
 import jax
 import jax.numpy as jnp
-
-from neuralgcm import transforms
+from neuralgcm.legacy import transforms
 
 Pytree = typing.Pytree
 PerturbationFn = Callable[..., Pytree]

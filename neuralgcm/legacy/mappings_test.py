@@ -20,8 +20,8 @@ import haiku as hk
 import jax
 import jax.numpy as jnp
 
-from neuralgcm import mappings  # pylint: disable=unused-import
-from neuralgcm import transforms  # pylint: disable=unused-import
+from neuralgcm.legacy import mappings  # pylint: disable=unused-import
+from neuralgcm.legacy import transforms  # pylint: disable=unused-import
 import numpy as np
 
 

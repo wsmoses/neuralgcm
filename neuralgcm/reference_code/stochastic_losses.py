@@ -18,12 +18,11 @@ from dinosaur import typing
 import gin
 import jax
 import jax.numpy as jnp
-from neuralgcm import model_utils
-import numpy as np
-
 import linear_transforms
 import metrics_base
 import metrics_util
+from neuralgcm.legacy import model_utils
+import numpy as np
 
 
 Pytree = typing.Pytree
@@ -82,9 +81,11 @@ class EnergyLikeLoss(metrics_base.Loss, abc.ABC):
       is_nodal: bool = True,
       is_encoded: bool = False,
       coarsen_aggregation: AggregationTransformConstructor = (
-          metrics_util.AggregateIdentity),
+          metrics_util.AggregateIdentity
+      ),
       vector_norm_squared_aggregation: AggregationTransformConstructor = (
-          metrics_util.AggregateIdentity),
+          metrics_util.AggregateIdentity
+      ),
   ):
     """Constructs an instance of EnergyLikeLoss.
 
@@ -104,29 +105,34 @@ class EnergyLikeLoss(metrics_base.Loss, abc.ABC):
         in a squared error loss.
       is_nodal: Indicator whether loss is computed in nodal space.
       is_encoded: Indicator whether loss is computed in encoded(model) space.
-      coarsen_aggregation: Transform class that is used to aggregate
-        errors before computing the loss elements. This enables defining losses
-        on coarser representations that accentuate larger scale structure.
+      coarsen_aggregation: Transform class that is used to aggregate errors
+        before computing the loss elements. This enables defining losses on
+        coarser representations that accentuate larger scale structure.
         Currently this argument should be used only by PatchEnergyLoss. Example
         coarsening operators include `RegriddingAggregation`, `TimeWindowSum`.
-      vector_norm_squared_aggregation: Transform class that is used to
-        aggregate components of the squared errors to form the distance for
-        computing the energy score. Currently this argument should be used only
-        by PatchEnergyLoss. Suitable aggregation methods include
+      vector_norm_squared_aggregation: Transform class that is used to aggregate
+        components of the squared errors to form the distance for computing the
+        energy score. Currently this argument should be used only by
+        PatchEnergyLoss. Suitable aggregation methods include
         `RegriddingAggregation`, `TimeWindowSum`, `SumVariables`, which would
         correspond to vectors of (1) single level, time, variable, horizontal
         neighbors; (2) single level, variable, lon-lat, sequence of time values;
         (3) all variables at a single level, time, lon-lat.
     """
     self.coarsen_fn = coarsen_aggregation(
-        trajectory_spec, is_nodal=is_nodal, is_encoded=is_encoded)
+        trajectory_spec, is_nodal=is_nodal, is_encoded=is_encoded
+    )
     self.vector_norm_squared_fn = vector_norm_squared_aggregation(
-        self.coarsen_fn.out_trajectory_spec, is_nodal=is_nodal,
-        is_encoded=is_encoded)
+        self.coarsen_fn.out_trajectory_spec,
+        is_nodal=is_nodal,
+        is_encoded=is_encoded,
+    )
     # parent class reductions are done on the final out_trajectory_spec.
     super().__init__(
         self.vector_norm_squared_fn.out_trajectory_spec,
-        is_nodal=is_nodal, is_encoded=is_encoded)
+        is_nodal=is_nodal,
+        is_encoded=is_encoded,
+    )
     self.components = components
     self.time_step = time_step
     self.level = level
@@ -276,7 +282,8 @@ class EnergyLikeLoss(metrics_base.Loss, abc.ABC):
 
 
 @gin.register(
-    denylist=['coarsen_aggregation', 'vector_norm_squared_aggregation'])
+    denylist=['coarsen_aggregation', 'vector_norm_squared_aggregation']
+)
 class CRPSLoss(EnergyLikeLoss):
   """CRPS loss on linearly transformed errors.
 
@@ -343,7 +350,8 @@ class CRPSLoss(EnergyLikeLoss):
 
 
 @gin.register(
-    denylist=['coarsen_aggregation', 'vector_norm_squared_aggregation'])
+    denylist=['coarsen_aggregation', 'vector_norm_squared_aggregation']
+)
 class EnergyScoreLoss(EnergyLikeLoss):
   """Energy score loss on linearly transformed errors.
 
@@ -448,4 +456,3 @@ class EnergyScoreLoss(EnergyLikeLoss):
     #       es_for_small_diffs,
     #   )
     return {'spread': spread, 'skill': skill, 'loss': es}
-

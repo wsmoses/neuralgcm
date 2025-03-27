@@ -21,11 +21,11 @@ from dinosaur import typing
 import gin
 import haiku as hk
 import jax
-from neuralgcm import equations
-from neuralgcm import features
-from neuralgcm import filters
-from neuralgcm import integrators
-from neuralgcm import mappings
+from neuralgcm.legacy import equations
+from neuralgcm.legacy import features
+from neuralgcm.legacy import filters
+from neuralgcm.legacy import integrators
+from neuralgcm.legacy import mappings
 
 Pytree = typing.Pytree
 PyTreeState = typing.PyTreeState

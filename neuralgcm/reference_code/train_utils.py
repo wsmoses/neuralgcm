@@ -31,14 +31,13 @@ from typing import (
 )
 from dinosaur import pytree_utils
 from dinosaur import typing
-
 import einops
 import gin
 import haiku as hk
 import jax
 from jax.experimental import mesh_utils
 import jax.numpy as jnp
-from neuralgcm import optimization
+from neuralgcm.legacy import optimization
 import numpy as np
 import optax
 

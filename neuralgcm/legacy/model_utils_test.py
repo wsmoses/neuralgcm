@@ -27,9 +27,9 @@ import haiku as hk
 import jax
 from jax import tree_util
 import jax.numpy as jnp
-from neuralgcm import forcings
-from neuralgcm import model_builder
-from neuralgcm import model_utils
+from neuralgcm.legacy import forcings
+from neuralgcm.legacy import model_builder
+from neuralgcm.legacy import model_utils
 import numpy as np
 
 

@@ -17,31 +17,31 @@
 # pylint: disable=unused-import
 # pylint: disable=g-bad-import-order
 
-import neuralgcm.api
-import neuralgcm.correctors
-import neuralgcm.decoders
 import neuralgcm.demo
-import neuralgcm.diagnostics
-import neuralgcm.embeddings
-import neuralgcm.encoders
-import neuralgcm.equations
-import neuralgcm.features
-import neuralgcm.filters
-import neuralgcm.forcings
-import neuralgcm.gin_utils
-import neuralgcm.initializers
-import neuralgcm.integrators
-import neuralgcm.layers
-import neuralgcm.mappings
-import neuralgcm.model_builder
-import neuralgcm.model_utils
-import neuralgcm.optimization
-import neuralgcm.orographies
-import neuralgcm.parameterizations
-import neuralgcm.perturbations
-import neuralgcm.stochastic
-import neuralgcm.towers
+import neuralgcm.legacy.api
+import neuralgcm.legacy.correctors
+import neuralgcm.legacy.decoders
+import neuralgcm.legacy.diagnostics
+import neuralgcm.legacy.embeddings
+import neuralgcm.legacy.encoders
+import neuralgcm.legacy.equations
+import neuralgcm.legacy.features
+import neuralgcm.legacy.filters
+import neuralgcm.legacy.forcings
+import neuralgcm.legacy.gin_utils
+import neuralgcm.legacy.initializers
+import neuralgcm.legacy.integrators
+import neuralgcm.legacy.layers
+import neuralgcm.legacy.mappings
+import neuralgcm.legacy.model_builder
+import neuralgcm.legacy.model_utils
+import neuralgcm.legacy.optimization
+import neuralgcm.legacy.orographies
+import neuralgcm.legacy.parameterizations
+import neuralgcm.legacy.perturbations
+import neuralgcm.legacy.stochastic
+import neuralgcm.legacy.towers
 
-from neuralgcm.api import PressureLevelModel
+from neuralgcm.legacy.api import PressureLevelModel
 
-__version__ = "1.1.2"  # keep in sync with pyproject.toml
+__version__ = "1.2.0"  # keep in sync with pyproject.toml

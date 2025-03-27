@@ -22,10 +22,10 @@ from dinosaur import time_integration
 from dinosaur import typing
 import gin
 import haiku as hk
-from neuralgcm import diagnostics
-from neuralgcm import integrators
-from neuralgcm import perturbations
-from neuralgcm import stochastic
+from neuralgcm.legacy import diagnostics
+from neuralgcm.legacy import integrators
+from neuralgcm.legacy import perturbations
+from neuralgcm.legacy import stochastic
 
 DiagnosticModule = diagnostics.DiagnosticModule
 Forcing = typing.Forcing

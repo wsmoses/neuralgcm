@@ -20,9 +20,9 @@ from dinosaur import typing
 import gin
 import haiku as hk
 import jax
-from neuralgcm import features
-from neuralgcm import mappings
-from neuralgcm import transforms
+from neuralgcm.legacy import features
+from neuralgcm.legacy import mappings
+from neuralgcm.legacy import transforms
 
 FeaturesModule = features.FeaturesModule
 Forcing = typing.Forcing

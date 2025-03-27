@@ -14,7 +14,7 @@
 from absl.testing import absltest
 from absl.testing import parameterized
 import jax
-from neuralgcm import optimization
+from neuralgcm.legacy import optimization
 import numpy as np
 import optax
 

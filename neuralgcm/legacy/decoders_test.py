@@ -28,10 +28,10 @@ from dinosaur import xarray_utils
 import haiku as hk
 import jax
 import jax.numpy as jnp
-from neuralgcm import decoders
-from neuralgcm import mappings
-from neuralgcm import towers
-from neuralgcm import transforms
+from neuralgcm.legacy import decoders
+from neuralgcm.legacy import mappings
+from neuralgcm.legacy import towers
+from neuralgcm.legacy import transforms
 import numpy as np
 
 

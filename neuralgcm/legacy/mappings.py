@@ -19,8 +19,7 @@ from dinosaur import typing
 import gin
 import haiku as hk
 import jax
-
-from neuralgcm import transforms
+from neuralgcm.legacy import transforms
 
 
 Array = typing.Array

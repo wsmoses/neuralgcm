@@ -22,7 +22,7 @@ from dinosaur import sigma_coordinates
 from dinosaur import spherical_harmonic
 import haiku as hk
 import jax
-from neuralgcm import stochastic
+from neuralgcm.legacy import stochastic
 import numpy as np
 import tensorflow_probability.substrates.jax as tfp
 

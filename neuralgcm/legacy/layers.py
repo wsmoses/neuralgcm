@@ -20,7 +20,7 @@ import haiku as hk
 import jax
 import jax.numpy as jnp
 
-from neuralgcm import initializers  # pylint: disable=unused-import
+from neuralgcm.legacy import initializers  # pylint: disable=unused-import
 
 Array = typing.Array
 GatingFactory = typing.GatingFactory

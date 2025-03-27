@@ -3,13 +3,23 @@ requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["neuralgcm"]
+packages = [
+    "neuralgcm",
+    "neuralgcm.experimental",
+    "neuralgcm.experimental.atmosphere",
+    "neuralgcm.experimental.core",
+    "neuralgcm.experimental.coordax",
+    "neuralgcm.experimental.jax_datetime",
+    "neuralgcm.experimental.jax_solar",
+    "neuralgcm.experimental.xreader",
+    "neuralgcm.legacy",
+]
 package-data = {neuralgcm = ["data/*"]}
 
 [project]
 name = "neuralgcm"
 description = "Neural General Circulation Models for Weather and Climate"
-version = "1.1.2"  # keep in sync with __version__ in neuralgcm/__init__.py
+version = "1.2.0"  # keep in sync with __version__ in neuralgcm/__init__.py
 authors = [
     {name = "Google LLC", email = "noreply@google.com"},
 ]

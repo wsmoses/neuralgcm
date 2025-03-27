@@ -21,12 +21,11 @@ from dinosaur import coordinate_systems
 from dinosaur import pytree_utils
 from dinosaur import sigma_coordinates
 from dinosaur import typing
-
 import gin
 import haiku as hk
 import jax
 import jax.numpy as jnp
-from neuralgcm import filters
+from neuralgcm.legacy import filters
 import numpy as np
 import tensorflow_probability.substrates.jax as tfp
 

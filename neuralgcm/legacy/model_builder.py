@@ -30,23 +30,23 @@ import gin
 import haiku as hk
 import jax.numpy as jnp
 
-from neuralgcm import correctors  # pylint: disable=unused-import
-from neuralgcm import decoders  # pylint: disable=unused-import
-from neuralgcm import embeddings  # pylint: disable=unused-import
-from neuralgcm import encoders  # pylint: disable=unused-import
-from neuralgcm import equations  # pylint: disable=unused-import
-from neuralgcm import features  # pylint: disable=unused-import
-from neuralgcm import filters  # pylint: disable=unused-import
-from neuralgcm import forcings  # pylint: disable=unused-import
-from neuralgcm import gin_utils
-from neuralgcm import layers  # pylint: disable=unused-import
-from neuralgcm import mappings  # pylint: disable=unused-import
-from neuralgcm import model_utils
-from neuralgcm import physics_specifications
-from neuralgcm import steps  # pylint: disable=unused-import
-from neuralgcm import stochastic  # pylint: disable=unused-import
-from neuralgcm import towers  # pylint: disable=unused-import
-from neuralgcm import transforms  # pylint: disable=unused-import
+from neuralgcm.legacy import correctors  # pylint: disable=unused-import
+from neuralgcm.legacy import decoders  # pylint: disable=unused-import
+from neuralgcm.legacy import embeddings  # pylint: disable=unused-import
+from neuralgcm.legacy import encoders  # pylint: disable=unused-import
+from neuralgcm.legacy import equations  # pylint: disable=unused-import
+from neuralgcm.legacy import features  # pylint: disable=unused-import
+from neuralgcm.legacy import filters  # pylint: disable=unused-import
+from neuralgcm.legacy import forcings  # pylint: disable=unused-import
+from neuralgcm.legacy import gin_utils
+from neuralgcm.legacy import layers  # pylint: disable=unused-import
+from neuralgcm.legacy import mappings  # pylint: disable=unused-import
+from neuralgcm.legacy import model_utils
+from neuralgcm.legacy import physics_specifications
+from neuralgcm.legacy import steps  # pylint: disable=unused-import
+from neuralgcm.legacy import stochastic  # pylint: disable=unused-import
+from neuralgcm.legacy import towers  # pylint: disable=unused-import
+from neuralgcm.legacy import transforms  # pylint: disable=unused-import
 import numpy as np
 import xarray
 # Note: many unused imports are needed to load configurable components;

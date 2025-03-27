@@ -27,13 +27,12 @@ from dinosaur import vertical_interpolation
 import gin
 import jax
 import jax.numpy as jnp
-from neuralgcm import model_utils
-import numpy as np
-
-import train_utils
 import linear_transforms
 import metrics_base
 import metrics_util
+from neuralgcm.legacy import model_utils
+import numpy as np
+import train_utils
 
 
 Pytree = typing.Pytree

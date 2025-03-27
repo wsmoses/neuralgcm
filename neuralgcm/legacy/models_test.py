@@ -31,8 +31,8 @@ import gin
 import haiku as hk
 import jax
 import jax.numpy as jnp
-from neuralgcm import model_builder
-from neuralgcm import physics_specifications
+from neuralgcm.legacy import model_builder
+from neuralgcm.legacy import physics_specifications
 import numpy as np
 
 units = scales.units

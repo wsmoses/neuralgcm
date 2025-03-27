@@ -30,14 +30,14 @@ import gin
 import haiku as hk
 import jax
 import jax.numpy as jnp
-from neuralgcm import diagnostics
-from neuralgcm import features
-from neuralgcm import filters
-from neuralgcm import mappings
-from neuralgcm import orographies
-from neuralgcm import perturbations
-from neuralgcm import stochastic
-from neuralgcm import transforms
+from neuralgcm.legacy import diagnostics
+from neuralgcm.legacy import features
+from neuralgcm.legacy import filters
+from neuralgcm.legacy import mappings
+from neuralgcm.legacy import orographies
+from neuralgcm.legacy import perturbations
+from neuralgcm.legacy import stochastic
+from neuralgcm.legacy import transforms
 import numpy as np
 
 

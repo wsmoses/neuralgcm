@@ -26,7 +26,7 @@ import gin
 import haiku as hk
 import jax
 import jax.numpy as jnp
-from neuralgcm import transforms
+from neuralgcm.legacy import transforms
 import numpy as np
 
 tree_leaves = jax.tree_util.tree_leaves

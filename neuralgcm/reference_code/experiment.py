@@ -18,42 +18,40 @@ import dataclasses
 import functools
 import logging
 import math
-from typing import cast, Any, Callable, NamedTuple, Optional
+from typing import Any, Callable, NamedTuple, Optional, cast
 
 from absl import app
+import datasets
 from dinosaur import typing
 from dinosaur import xarray_utils
 import gin
+from google_proprietary_code import checkpoint
+from google_proprietary_code import experiment
+from google_proprietary_code import experiment_utils
+# proprietary imports
+from google_proprietary_code import profiling_util
+from google_proprietary_code import streaming
+from google_proprietary_code import timing_util
 import haiku as hk
 import jax
 import jax.numpy as jnp
 import jax.sharding
-from ml_collections import config_dict
-from neuralgcm import model_builder
-from neuralgcm import model_utils
-from neuralgcm import optimization
-from neuralgcm import physics_specifications
-import numpy as np
-import optax
-import pandas as pd
-import tensorflow as tf
-import xarray
-
-import train_utils
 import metrics
 import metrics_base
 import metrics_util
-import stochastic_losses
-import datasets
+from ml_collections import config_dict
+from neuralgcm.legacy import model_builder
+from neuralgcm.legacy import model_utils
+from neuralgcm.legacy import optimization
+from neuralgcm.legacy import physics_specifications
+import numpy as np
+import optax
+import pandas as pd
 import reader
-
-# proprietary imports
-from google_proprietary_code import profiling_util
-from google_proprietary_code import checkpoint
-from google_proprietary_code import experiment
-from google_proprietary_code import experiment_utils
-from google_proprietary_code import streaming
-from google_proprietary_code import timing_util
+import stochastic_losses
+import tensorflow as tf
+import train_utils
+import xarray
 
 Params = typing.Params
 PyTree = Any

@@ -23,7 +23,7 @@ import gin
 import haiku as hk
 import jax
 import jax.numpy as jnp
-from neuralgcm import layers
+from neuralgcm.legacy import layers
 
 Array = typing.Array
 TowerFactory = typing.TowerFactory

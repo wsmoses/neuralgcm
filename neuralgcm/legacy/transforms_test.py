@@ -24,7 +24,7 @@ import gin
 import haiku as hk
 import jax
 import jax.numpy as jnp
-from neuralgcm import transforms  # pylint: disable=unused-import
+from neuralgcm.legacy import transforms  # pylint: disable=unused-import
 import numpy as np
 
 NLAYER = 10

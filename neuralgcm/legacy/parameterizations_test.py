@@ -24,10 +24,10 @@ import gin
 import haiku as hk
 import jax
 
-from neuralgcm import features  # pylint: disable=unused-import
-from neuralgcm import parameterizations  # pylint: disable=unused-import
-from neuralgcm import physics_specifications
-from neuralgcm import transforms  # pylint: disable=unused-import
+from neuralgcm.legacy import features  # pylint: disable=unused-import
+from neuralgcm.legacy import parameterizations  # pylint: disable=unused-import
+from neuralgcm.legacy import physics_specifications
+from neuralgcm.legacy import transforms  # pylint: disable=unused-import
 
 SCALE = scales.DEFAULT_SCALE
 units = scales.units

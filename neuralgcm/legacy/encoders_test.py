@@ -26,10 +26,10 @@ from dinosaur import vertical_interpolation
 from dinosaur import xarray_utils
 import haiku as hk
 import jax
-from neuralgcm import encoders
-from neuralgcm import mappings
-from neuralgcm import towers
-from neuralgcm import transforms
+from neuralgcm.legacy import encoders
+from neuralgcm.legacy import mappings
+from neuralgcm.legacy import towers
+from neuralgcm.legacy import transforms
 import numpy as np
 
 

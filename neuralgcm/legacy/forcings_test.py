@@ -196,8 +196,7 @@ class ForcingsTest(parameterized.TestCase):
         forcing_fn(params, forcing_data, sim_time)
 
     with self.subTest('sim_time is nan'):
-      # jax casts None to an array with nan
-      sim_time = jax.numpy.asarray(None)  # = DeviceArray(nan, dtype=float32)
+      sim_time = jax.numpy.nan
       # inside forcing_fn, sim_time gets cast to int32
       # this is unsafe, since it turns nan into an actual integer,
       # idx=2147483647.
@@ -304,8 +303,7 @@ class ForcingsTest(parameterized.TestCase):
       np.testing.assert_allclose(forcing['sim_time'], sim_time_data[0])
 
     with self.subTest('sim_time is nan'):
-      # jax casts None to an array with nan
-      sim_time = jax.numpy.asarray(None)  # = DeviceArray(nan, dtype=float32)
+      sim_time = jax.numpy.nan
       forcing = forcing_fn(params, forcing_data, sim_time)
       np.testing.assert_allclose(forcing['sim_time'], sim_time_data[0])
 

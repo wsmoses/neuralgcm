@@ -20,6 +20,8 @@ from __future__ import annotations
 from typing import Protocol, Sequence
 
 import jax
+from jax import numpy as jnp
+import jax.scipy.special
 
 
 class ArrayTransform(Protocol):
@@ -49,3 +51,27 @@ class CombinedArrayTransform():
     for transform in self.transforms:
       x = transform(x)
     return x
+
+
+class Clip():
+  """Clips an array to a range."""
+
+  def __init__(self, min_val=None, max_val=None):
+    self.min_val = min_val
+    self.max_val = max_val
+
+  def __call__(self, x: jax.Array) -> jax.Array:
+    return jnp.clip(x, a_min=self.min_val, a_max=self.max_val)
+
+class Logit():
+  """wrapper around jax.scipy.special.logit."""
+
+  def __call__(self, x: jax.Array) -> jax.Array:
+    return jax.scipy.special.logit(x)
+
+
+class Sigmoid():
+  """wrapper around jax.nn.sigmoid."""
+
+  def __call__(self, x: jax.Array) -> jax.Array:
+    return jax.nn.sigmoid(x)

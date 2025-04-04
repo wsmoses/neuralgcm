@@ -21,7 +21,7 @@ from absl.testing import parameterized
 import chex
 import jax
 import jax.numpy as jnp
-from neuralgcm.experimental import jax_datetime as jdt
+import jax_datetime as jdt
 from neuralgcm.experimental.coordax import named_axes
 from neuralgcm.experimental.coordax import ndarrays
 import numpy as np

@@ -15,9 +15,9 @@ import datetime
 
 from absl.testing import absltest
 import jax.numpy as jnp
+import jax_datetime as jdt
 import neuralgcm.experimental.coordax as cx
 from neuralgcm.experimental.coordax import testing
-import neuralgcm.experimental.jax_datetime as jdt
 import numpy as np
 import xarray
 

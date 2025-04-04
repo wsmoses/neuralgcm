@@ -24,6 +24,7 @@ from dinosaur import primitive_equations
 from flax import nnx
 import jax
 import jax.numpy as jnp
+import jax_datetime as jdt
 from neuralgcm.experimental import coordax as cx
 from neuralgcm.experimental import pytree_mappings
 from neuralgcm.experimental import pytree_transforms
@@ -37,7 +38,6 @@ from neuralgcm.experimental.core import random_processes
 from neuralgcm.experimental.core import standard_layers
 from neuralgcm.experimental.core import typing
 from neuralgcm.experimental.core import units
-import neuralgcm.experimental.jax_datetime as jdt
 import numpy as np
 import xarray
 

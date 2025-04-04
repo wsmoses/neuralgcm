@@ -16,8 +16,8 @@ import datetime
 from absl.testing import absltest
 from absl.testing import parameterized
 import jax.numpy as jnp
+import jax_datetime as jdt
 from neuralgcm.experimental import jax_solar
-import neuralgcm.experimental.jax_datetime as jdt
 import numpy as np
 
 

@@ -20,9 +20,9 @@ import functools
 from flax import nnx
 import jax
 import jax.numpy as jnp
+import jax_datetime as jdt
 from neuralgcm.experimental import coordax as cx
 from neuralgcm.experimental.core import typing
-import neuralgcm.experimental.jax_datetime as jdt
 
 
 class DynamicInputValue(nnx.Intermediate):

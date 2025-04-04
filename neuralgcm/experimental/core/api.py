@@ -22,6 +22,7 @@ from typing import Callable
 import fiddle as fdl
 from flax import nnx
 import jax
+import jax_datetime as jdt
 from neuralgcm.experimental import coordax as cx
 from neuralgcm.experimental.core import coordinates
 from neuralgcm.experimental.core import diagnostics
@@ -33,7 +34,6 @@ from neuralgcm.experimental.core import parallelism
 from neuralgcm.experimental.core import random_processes
 from neuralgcm.experimental.core import time_integrators
 from neuralgcm.experimental.core import typing
-import neuralgcm.experimental.jax_datetime as jdt
 import numpy as np
 import pandas as pd
 import xarray

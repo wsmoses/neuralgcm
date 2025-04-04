@@ -22,7 +22,7 @@ import jax
 import numpy as np
 
 try:
-  from neuralgcm.experimental import jax_datetime  # pylint: disable=g-import-not-at-top
+  import jax_datetime  # pylint: disable=g-import-not-at-top
 except ImportError:
   jax_datetime = None
 

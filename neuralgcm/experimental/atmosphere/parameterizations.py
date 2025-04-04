@@ -17,6 +17,7 @@
 from typing import Callable
 
 from flax import nnx
+import jax_datetime as jdt
 from neuralgcm.experimental import pytree_mappings
 from neuralgcm.experimental import pytree_transforms
 from neuralgcm.experimental.core import coordinates
@@ -24,7 +25,6 @@ from neuralgcm.experimental.core import parallelism
 from neuralgcm.experimental.core import pytree_utils
 from neuralgcm.experimental.core import spatial_filters
 from neuralgcm.experimental.core import typing
-import neuralgcm.experimental.jax_datetime as jdt
 
 
 ShapeFloatStruct = typing.ShapeFloatStruct

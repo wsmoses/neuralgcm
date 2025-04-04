@@ -36,8 +36,8 @@ from dinosaur import spherical_harmonic
 from flax import nnx
 import jax
 import jax.numpy as jnp
+import jax_datetime as jdt
 from neuralgcm.experimental import coordax as cx
-from neuralgcm.experimental import jax_datetime as jdt
 from neuralgcm.experimental import jax_solar
 from neuralgcm.experimental.core import coordinates
 from neuralgcm.experimental.core import dynamic_io

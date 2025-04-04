@@ -30,7 +30,7 @@ from typing import Self
 
 import jax
 import jax.numpy as jnp
-import neuralgcm.experimental.jax_datetime as jdt
+import jax_datetime as jdt
 import numpy as np
 
 

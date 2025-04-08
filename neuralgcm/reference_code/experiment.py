@@ -1397,6 +1397,4 @@ class Experiment(experiment.AbstractExperiment):
 
 
 if __name__ == '__main__':
-  with jax.spmd_mode('allow_all'):
-
-    app.run(functools.partial(run_training.main, Experiment))
+  app.run(functools.partial(run_training.main, Experiment))

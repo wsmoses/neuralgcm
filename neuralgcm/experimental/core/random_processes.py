@@ -554,7 +554,7 @@ class BatchGaussianRandomField(RandomProcessModule):
       self, state: typing.Randomness | None = None
   ) -> typing.Randomness:
     if state is None:
-      state = self.state.value
+      state = self.randomness_state.value
     advance_fn = lambda grf, core, key, step: grf.advance_core(core, key, step)
     in_axes = (0, 0, 0, None)
     advance_fn = nnx.vmap(advance_fn, in_axes=in_axes)

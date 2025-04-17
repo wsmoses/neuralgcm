@@ -369,6 +369,9 @@ class GaussianRandomFieldCore(nnx.Module):
   ) -> jax.Array:
     """Helper method for advancing the core of the gaussian random field."""
     dinosaur_grid = self.grid.ylm_grid
+    dinosaur_grid = dataclasses.replace(
+        dinosaur_grid, spmd_mesh=self.mesh.spmd_mesh
+    )
     modal_shape = dinosaur_grid.modal_shape
     rng = _advance_prng_key(state_key, state_step)
     eta = jax.random.truncated_normal(rng, -self.clip, self.clip, modal_shape)

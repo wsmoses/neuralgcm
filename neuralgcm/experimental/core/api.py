@@ -110,6 +110,7 @@ class ForecastSystem(nnx.Module, abc.ABC):
   ) -> typing.ModelState:
     self.update_dynamic_inputs(dynamic_inputs)
     self.initialize_random_processes(rng)
+    self.reset_diagnostic_state()
     prognostics = self.assimilate_prognostics(observations, initial_state)
     diagnostic = nnx.state(self, diagnostics.DiagnosticValue)
     randomness = nnx.state(self, random_processes.RandomnessValue)
@@ -153,6 +154,12 @@ class ForecastSystem(nnx.Module, abc.ABC):
     rngs = jax.random.split(rng, len(modules))
     for random_process, key in zip(modules, rngs):
       random_process.unconditional_sample(key)
+
+  def reset_diagnostic_state(self):
+    for diagnostic_module in module_utils.retrieve_subclass_modules(
+        self, diagnostics.DiagnosticModule
+    ):
+      diagnostic_module.reset_diagnostic_state()
 
   def format_diagnostics(
       self,

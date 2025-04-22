@@ -36,6 +36,10 @@ class DiagnosticModule(nnx.Module):
     """Returns formatted diagnostics computed from the internal module state."""
     raise NotImplementedError(f'`format_diagnostics` on {self.__name__=}.')
 
+  def reset_diagnostic_state(self):
+    """Resets the internal diagnostic state."""
+    raise NotImplementedError(f'`reset_diagnostic_state` on {self.__name__=}.')
+
   def __call__(self, *args, **kwargs) -> None:
     """Updates the internal module state from the inputs."""
     raise NotImplementedError(f'`__call__` on {self.__name__=}.')
@@ -66,6 +70,11 @@ class CumulativeDiagnostic(DiagnosticModule):
         for k, v in self.extract_coords.items()
     }
 
+  def reset_diagnostic_state(self):
+    """Resets the internal diagnostic state."""
+    for k, v in self.cumulatives.items():
+      self.cumulatives[k].value = jnp.zeros_like(v)
+
   def format_diagnostics(self, time: jdt.Datetime) -> typing.Pytree:
     # TODO(dkochkov): remove time arg, it is no longer used.
     return {
@@ -92,6 +101,11 @@ class InstantDiagnostic(DiagnosticModule):
         k: DiagnosticValue(jnp.zeros(v.shape))
         for k, v in self.extract_coords.items()
     }
+
+  def reset_diagnostic_state(self):
+    """Resets the internal diagnostic state."""
+    for k, v in self.instants.items():
+      self.instants[k].value = jnp.zeros_like(v)
 
   def format_diagnostics(self, time: jdt.Datetime) -> typing.Pytree:
     # TODO(dkochkov): remove time arg, it is no longer used.
@@ -136,6 +150,12 @@ class IntervalDiagnostic(DiagnosticModule):
         k: DiagnosticValue(jnp.zeros(v.shape))
         for k, v in self.extract_coords.items()
     }
+
+  def reset_diagnostic_state(self):
+    """Resets the internal diagnostic state."""
+    for k in self.extract_coords:
+      self.interval_values[k].value = jnp.zeros_like(self.interval_values[k])
+      self.cumulative[k].value = jnp.zeros_like(self.cumulative[k])
 
   def next_interval(self, inputs, *args, **kwargs):
     del inputs, args, kwargs

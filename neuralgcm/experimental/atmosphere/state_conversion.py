@@ -43,7 +43,7 @@ def uvtz_to_primitive_equations(
       source_data['geopotential'],
       orography.nodal_orography,
       sim_units.g,
-  )
+  )[0, ...]  # Dinosaur uses dummy surface dimension for which we remove.
   interpolate_fn = vertical_interpolation.vectorize_vertical_interpolation(
       vertical_interpolation.vertical_interpolation
   )

@@ -555,8 +555,8 @@ class InputsFeaturesTest(parameterized.TestCase):
         coords=coords, surface_field_names=('a', 'b'), volume_field_names=('c',)
     )
     inputs = {
-        'a': np.ones((1,) + coords.horizontal.shape),
-        'b': np.ones((1,) + coords.horizontal.shape),
+        'a': np.ones(coords.horizontal.shape),
+        'b': np.ones(coords.horizontal.shape),
         'c': np.ones(coords.shape),
         'time': jdt.to_datetime('2025-01-09T15:00'),
     }
@@ -571,7 +571,7 @@ class InputsFeaturesTest(parameterized.TestCase):
         coords=coords, mesh=parallelism.Mesh(None)
     )
     inputs = {
-        'log_surface_pressure': np.ones((1,) + coords.horizontal.shape),
+        'log_surface_pressure': np.ones(coords.horizontal.shape),
     }
     self._test_feature_module(pressure_features, inputs)
 

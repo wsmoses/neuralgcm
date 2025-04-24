@@ -125,15 +125,7 @@ class FixedLearnedObservationOperator(ObservationOperator):
   ) -> dict[str, cx.Field]:
     """Returns predicted observations matching `query`."""
     inputs = jax.tree.map(lambda x: x.data, inputs, is_leaf=cx.is_field)
-    # TODO(dkochkov): make dummy axis expansion part of the mapping specs.
-    maybe_add_dummy = lambda x: jnp.expand_dims(x, 0) if x.ndim == 2 else x
-    inputs = jax.tree.map(maybe_add_dummy, inputs)
     predictions = self.coordinate_mapping(inputs)
-    # TODO(dkochkov): move squeezing to the mapping.
-    predictions = {
-        k: jnp.squeeze(v, axis=0) if v.shape[0] == 1 else v
-        for k, v in predictions.items()
-    }
     is_coordinate = lambda x: isinstance(x, cx.Coordinate)
     prediction_keys = list(predictions.keys())
     observations = {}
@@ -194,9 +186,12 @@ class LearnedSparseScalarObservationFromNeighbors(nnx.Module):
       rngs: nnx.Rngs,
   ):
     neighbor_feature_shapes = features_module.output_shapes(input_state_shapes)
+    expanded_neighbor_feature_shapes = pytree_utils.expand_to_ndim(
+        neighbor_feature_shapes, ndim=3, axis=-3
+    )
     f_axis = -3  # default column axis.
     neighbor_feature_size = sum(
-        [x.shape[f_axis] for x in jax.tree.leaves(neighbor_feature_shapes)]
+        [x.shape[f_axis] for x in jax.tree.leaves(expanded_neighbor_feature_shapes)]
     )
     displacement_shapes = {
         'delta_lon': typing.ShapeFloatStruct([1]),
@@ -239,6 +234,7 @@ class LearnedSparseScalarObservationFromNeighbors(nnx.Module):
     inputs = copy.copy(inputs)  # ensure that inputs are not modified.
     query = copy.copy(query)  # ensure that query is not modified.
     all_features = self.features_module(inputs)
+    all_features = pytree_utils.expand_to_ndim(all_features, ndim=3, axis=-3)
     grid = self.grid
     lon_query, lat_query = query.pop('longitude'), query.pop('latitude')
     sparse_coord = cx.get_coordinate(lon_query)

@@ -61,7 +61,7 @@ class PrecipitationMinusEvaporationTest(parameterized.TestCase):
     self.prognostics = {
         'divergence': np.ones(modal_coords.shape),
         'vorticity': np.ones(modal_coords.shape),
-        'log_surface_pressure': np.zeros((1,) + modal_coords.horizontal.shape),
+        'log_surface_pressure': np.zeros(modal_coords.horizontal.shape),
         'temperature_variation': np.ones(modal_coords.shape),
         'specific_humidity': np.ones(modal_coords.shape),
         'specific_cloud_ice_water_content': np.ones(modal_coords.shape),

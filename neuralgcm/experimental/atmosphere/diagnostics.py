@@ -57,9 +57,7 @@ class ExtractPrecipitationPlusEvaporation(nnx.Module):
   def _compute_p_plus_e_rate(self, tendencies, prognostics) -> typing.Array:
     ylm_grid = self.grid.ylm_grid
     ylm_grid = dataclasses.replace(ylm_grid, spmd_mesh=self.mesh.spmd_mesh)
-    lsp = prognostics['log_surface_pressure']
-    # TODO(dkochkov): standardize on not having dummy dimension for s_pressure.
-    p_surface = jnp.squeeze(jnp.exp(ylm_grid.to_nodal(lsp)), axis=0)
+    p_surface = jnp.exp(ylm_grid.to_nodal(prognostics['log_surface_pressure']))
     scale = p_surface / self.sim_units.gravity_acceleration
     moisture_tendencies = [
         v for tracer, v in tendencies.items() if tracer in self.moisture_species

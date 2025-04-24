@@ -832,7 +832,6 @@ class RadiationFeatures(TransformABC):
     features['radiation'] = jax_solar.normalized_radiation_flux(
         time=inputs['time'], longitude=self.lon, latitude=self.lat
     )
-    features = jax.tree.map(lambda x: jnp.expand_dims(x, 0), features)
     return self.transform(features)
 
 
@@ -845,8 +844,7 @@ class LatitudeFeatures(TransformABC):
 
   def __call__(self, inputs: typing.Pytree) -> typing.Pytree:
     del inputs  # unused.
-    _, sin_lat = self.grid.ylm_grid.nodal_mesh
-    sin_features = sin_lat[np.newaxis, ...]
+    _, sin_features = self.grid.ylm_grid.nodal_mesh
     cos_features = jnp.cos(jnp.arcsin(sin_features))
     features = {
         'cos_latitude': cos_features,
@@ -864,9 +862,7 @@ class OrographyFeatures(TransformABC):
 
   def __call__(self, inputs: typing.Pytree) -> typing.Pytree:
     del inputs  # unused.
-    return self.transform({
-        'orography': self.orography_module.nodal_orography[np.newaxis, ...],
-    })
+    return self.transform({'orography': self.orography_module.nodal_orography})
 
 
 @nnx_compat.dataclass
@@ -880,9 +876,7 @@ class OrographyWithGradsFeatures(TransformABC):
 
   def __call__(self, inputs: typing.Pytree) -> typing.Pytree:
     del inputs  # unused.
-    modal_features = {
-        'orography': self.orography_module.modal_orography[np.newaxis, ...],
-    }
+    modal_features = {'orography': self.orography_module.modal_orography}
     modal_features = {  # jit should eliminate to_modal if it is not used.
         typing.KeyWithCosLatFactor(k, 0): v for k, v in modal_features.items()
     }
@@ -909,18 +903,6 @@ class PressureFeatures(TransformABC):
   coords: coordinates.DinosaurCoordinates
   transform: Transform = Identity()
   mesh: parallelism.Mesh = dataclasses.field(kw_only=True)
-
-  def output_shapes(
-      self, input_shapes: typing.Pytree | None = None
-  ) -> typing.Pytree:
-    del input_shapes  # unused.
-    horizontal = self.coords.horizontal
-    assert isinstance(horizontal, coordinates.SphericalHarmonicGrid)
-    nodal_coords = coordinates.DinosaurCoordinates(
-        horizontal=horizontal.to_lon_lat_grid(),
-        vertical=self.coords.vertical,
-    )
-    return {'pressure': ShapeFloatStruct(nodal_coords.shape)}
 
   def __call__(self, inputs: typing.Pytree) -> typing.Pytree:
     dinosaur_grid = self.coords.dinosaur_grid
@@ -974,23 +956,16 @@ class DynamicInputFeatures(TransformABC):
   def output_shapes(
       self, input_shapes: typing.Pytree | None = None
   ) -> typing.Pytree:
+    # Note: we override this method because at init
     del input_shapes  # unused.
     data_shapes = self.dynamic_input_module.output_shapes()
-    return {
-        k: ShapeFloatStruct((1,) + v.shape) if v.ndim == 2 else v
-        for k, v in data_shapes.items()
-        if k in self.keys
-    }
+    return {k: v for k, v in data_shapes.items() if k in self.keys}
 
   def __call__(self, inputs: typing.Pytree) -> typing.Pytree:
     time = inputs['time']
     data_features = self.dynamic_input_module(time)
     # TODO(dkochkov) Used to expand dim here.
     features = {k: data_features[k].data for k in self.keys}
-    features = {
-        k: jnp.expand_dims(v, 0) if v.ndim == 2 else v
-        for k, v in features.items()
-    }
     return self.transform(features)
 
 
@@ -1039,8 +1014,6 @@ class SpatialSurfaceFeatures(TransformABC):
         data_units = units.parse_units(data.attrs['units'])
         data = sim_units.nondimensionalize(data.values * data_units)
         data = spatial_filter(data)
-        if np.ndim(data) != 3:
-          data = data[np.newaxis, ...]
         self.features[key] = type(feature_value)(data)
 
 
@@ -1175,19 +1148,6 @@ class PrognosticFeatures(TransformABC):
     for k in self.fields_to_include:
       output_features[k] = inputs[k]
     return self.transform(output_features)
-
-  def output_shapes(
-      self, input_shapes: typing.Pytree | None = None
-  ) -> typing.Pytree:
-    del input_shapes  # unused.
-    surface_shape = ShapeFloatStruct((1,) + self.coords.horizontal.shape)
-    volume_shape = ShapeFloatStruct(self.coords.shape)
-    out_shapes = {}
-    for k in self.surface_field_names:
-      out_shapes[k] = surface_shape
-    for k in self.volume_field_names:
-      out_shapes[k] = volume_shape
-    return self.transform.output_shapes(out_shapes)
 
 
 class EmbeddedFeatures(TransformABC):

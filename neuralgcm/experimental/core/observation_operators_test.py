@@ -27,6 +27,7 @@ from neuralgcm.experimental import towers
 from neuralgcm.experimental.core import coordinates
 from neuralgcm.experimental.core import observation_operators
 from neuralgcm.experimental.core import parallelism
+from neuralgcm.experimental.core import pytree_utils
 from neuralgcm.experimental.core import standard_layers
 import numpy as np
 
@@ -94,6 +95,9 @@ class FixedLearnedObservationOperatorTest(parameterized.TestCase):
         vertical=coordinates.SigmaLevels.equidistant(4),
     )
     input_names = ('u', 'v', 't')
+    self.inputs = {
+        k: cx.wrap(np.ones(self.coords.shape), self.coords) for k in input_names
+    }
     feature_module = pytree_transforms.PrognosticFeatures(
         self.coords, volume_field_names=input_names
     )
@@ -111,6 +115,7 @@ class FixedLearnedObservationOperatorTest(parameterized.TestCase):
         pytree_mappings.Embedding,
         feature_module=feature_module,
         mapping_factory=mapping_factory,
+        input_state_shapes=pytree_utils.shape_structure(self.inputs),
         mesh=parallelism.Mesh(None),
     )
     volume_field_names = ('turbulence_index',)
@@ -123,9 +128,6 @@ class FixedLearnedObservationOperatorTest(parameterized.TestCase):
         rngs=nnx.Rngs(0),
         mesh=parallelism.Mesh(None),
     )
-    self.inputs = {
-        k: cx.wrap(np.ones(self.coords.shape), self.coords) for k in input_names
-    }
 
   def test_returns_only_queried_fields(self):
     operator = observation_operators.FixedLearnedObservationOperator(

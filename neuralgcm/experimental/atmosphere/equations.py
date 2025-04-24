@@ -19,9 +19,11 @@ from typing import Callable, Sequence
 
 from dinosaur import primitive_equations
 from dinosaur import sigma_coordinates
+import jax.numpy as jnp
 from neuralgcm.experimental.core import coordinates
 from neuralgcm.experimental.core import orographies
 from neuralgcm.experimental.core import parallelism
+from neuralgcm.experimental.core import pytree_utils
 from neuralgcm.experimental.core import time_integrators
 from neuralgcm.experimental.core import typing
 from neuralgcm.experimental.core import units
@@ -74,17 +76,47 @@ class PrimitiveEquations(time_integrators.ImplicitExplicitODE):
   def T_ref(self) -> typing.Array:
     return self.primitive_equation.T_ref
 
+  def _expand_log_surface_pressure(
+      self, state: primitive_equations.StateWithTime
+  ) -> primitive_equations.StateWithTime:
+    state_as_dict, from_dict_fn = pytree_utils.as_dict(state)
+    state_as_dict['log_surface_pressure'] = jnp.expand_dims(
+        state_as_dict['log_surface_pressure'], axis=0
+    )
+    return from_dict_fn(state_as_dict)
+
+  def _squeeze_log_surface_pressure(
+      self, state: primitive_equations.StateWithTime
+  ) -> primitive_equations.StateWithTime:
+    state_as_dict, from_dict_fn = pytree_utils.as_dict(state)
+    state_as_dict['log_surface_pressure'] = jnp.squeeze(
+        state_as_dict['log_surface_pressure'], axis=0
+    )
+    return from_dict_fn(state_as_dict)
+
   def explicit_terms(
       self, state: primitive_equations.StateWithTime
   ) -> primitive_equations.StateWithTime:
-    return self.primitive_equation.explicit_terms(state)
+    return self._squeeze_log_surface_pressure(
+        self.primitive_equation.explicit_terms(
+            self._expand_log_surface_pressure(state)
+        )
+    )
 
   def implicit_terms(
       self, state: primitive_equations.StateWithTime
   ) -> primitive_equations.StateWithTime:
-    return self.primitive_equation.implicit_terms(state)
+    return self._squeeze_log_surface_pressure(
+        self.primitive_equation.implicit_terms(
+            self._expand_log_surface_pressure(state)
+        )
+    )
 
   def implicit_inverse(
       self, state: primitive_equations.StateWithTime, step_size: float
   ) -> primitive_equations.StateWithTime:
-    return self.primitive_equation.implicit_inverse(state, step_size)
+    return self._squeeze_log_surface_pressure(
+        self.primitive_equation.implicit_inverse(
+            self._expand_log_surface_pressure(state), step_size
+        )
+    )

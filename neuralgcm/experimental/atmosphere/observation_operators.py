@@ -20,7 +20,6 @@ from typing import Sequence
 
 from dinosaur import primitive_equations as dinosaur_primitive_equations
 import jax
-import jax.numpy as jnp
 from neuralgcm.experimental import coordax as cx
 from neuralgcm.experimental import pytree_mappings
 from neuralgcm.experimental.atmosphere import equations
@@ -99,11 +98,6 @@ class PressureLevelObservationOperator(
     # TODO(dkochkov): make primitive_equation_to_uvtz work with flat structure
     # to avoid the need to nesting tracers.
     tracers = {k: inputs.pop(k) for k in self.tracer_names}
-    # TODO(dkochkov): standardize around not having dummy dimension for surface
-    # variables by adding expand_dims transform to features.
-    inputs['log_surface_pressure'] = (
-        inputs['log_surface_pressure'][jnp.newaxis, ...]
-    )
     source_state = dinosaur_primitive_equations.State(
         **(inputs | {'tracers': tracers})
     )
@@ -201,11 +195,6 @@ class SigmaLevelObservationOperator(
     # TODO(dkochkov): make primitive_equation_to_uvtz work with flat structure
     # to avoid the need to nesting tracers.
     tracers = {k: inputs.pop(k) for k in self.tracer_names}
-    # TODO(dkochkov): standardize around not having dummy dimension for surface
-    # variables by adding expand_dims transform to features.
-    inputs['log_surface_pressure'] = (
-        inputs['log_surface_pressure'][jnp.newaxis, ...]
-    )
     source_state = dinosaur_primitive_equations.State(
         **(inputs | {'tracers': tracers})
     )
@@ -243,7 +232,7 @@ class SigmaLevelObservationOperator(
         for k, v in interpolated_state.items() if k != 'surface_pressure'
     }
     observations_fields['surface_pressure'] = cx.wrap(
-        jnp.squeeze(interpolated_state['surface_pressure'], axis=0), grid
+        interpolated_state['surface_pressure'], grid
     )
     return observation_operators.DataObservationOperator(
         observations_fields | {'time': time}

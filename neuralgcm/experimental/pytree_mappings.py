@@ -117,7 +117,7 @@ class VariableMapping(nnx.Module):
         'var_n': jnp.asarray((level, lon, lat)),
     }
 
-  The leaves of the input pytree must have the same shape, e.g. (1, lon, lat) or
+  The leaves of the input pytree must have the same shape, e.g.
   (level, lon, lat). To mix shapes, broadcast before passing to the mapping.
   """
 
@@ -337,9 +337,7 @@ class CoordsStateMapping(nnx.Module):
     for name in volume_field_names:
       output_shapes[name] = typing.ShapeFloatStruct(coords.shape)
     for name in surface_field_names:
-      output_shapes[name] = typing.ShapeFloatStruct(
-          (1,) + coords.horizontal.shape
-      )
+      output_shapes[name] = typing.ShapeFloatStruct(coords.horizontal.shape)
     self.coords = coords
     self.embedding = embedding_factory(output_shapes, rngs=rngs)
     self.transform = transform

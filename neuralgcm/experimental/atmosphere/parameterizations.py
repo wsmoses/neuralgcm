@@ -65,7 +65,7 @@ class ModalNeuralDivCurlParameterization(nnx.Module):
           (layers,) + dinosaur_grid.nodal_shape
       )
     for name in set(surface_field_names):
-      output_shapes[name] = ShapeFloatStruct((1,) + dinosaur_grid.nodal_shape)
+      output_shapes[name] = ShapeFloatStruct(dinosaur_grid.nodal_shape)
     if input_state_shapes is None:
       input_state_shapes = pytree_mappings.minimal_state_struct()
     input_shapes = features_module.output_shapes(input_state_shapes)

@@ -51,6 +51,8 @@ class EmbeddingsTest(parameterized.TestCase):
         vertical=coordinates.SigmaLevels.equidistant(4),
     )
     input_names = ('u', 'v')
+    test_inputs = {k: np.ones(coords.shape) for k in input_names}
+    input_state_shapes = pytree_utils.shape_structure(test_inputs)
     feature_module = pytree_transforms.PrognosticFeatures(
         coords, volume_field_names=input_names
     )
@@ -72,10 +74,10 @@ class EmbeddingsTest(parameterized.TestCase):
         output_shapes=output_shapes,
         feature_module=feature_module,
         mapping_factory=mapping_factory,
+        input_state_shapes=input_state_shapes,
         rngs=nnx.Rngs(0),
         mesh=parallelism.Mesh(None),
     )
-    test_inputs = {k: np.ones(coords.shape) for k in input_names}
     self._test_embedding_module(embedding, test_inputs)
 
   def test_coordinate_state_mapping(self):
@@ -85,6 +87,8 @@ class EmbeddingsTest(parameterized.TestCase):
         vertical=coordinates.SigmaLevels.equidistant(4),
     )
     input_names = ('u', 'v')
+    test_inputs = {k: np.ones(coords.shape) for k in input_names}
+    input_state_shapes = pytree_utils.shape_structure(test_inputs)
     feature_module = pytree_transforms.PrognosticFeatures(
         coords, volume_field_names=input_names
     )
@@ -102,6 +106,7 @@ class EmbeddingsTest(parameterized.TestCase):
         pytree_mappings.Embedding,
         feature_module=feature_module,
         mapping_factory=mapping_factory,
+        input_state_shapes=input_state_shapes,
         mesh=parallelism.Mesh(None),
     )
     volume_field_names = ('u', 'div')
@@ -114,13 +119,12 @@ class EmbeddingsTest(parameterized.TestCase):
         rngs=nnx.Rngs(0),
         mesh=parallelism.Mesh(None),
     )
-    test_inputs = {k: np.ones(coords.shape) for k in input_names}
     out = state_mapping(test_inputs)
     out_shape = pytree_utils.shape_structure(out)
     expected_shape = {
         'u': typing.ShapeFloatStruct(coords.shape),
         'div': typing.ShapeFloatStruct(coords.shape),
-        'pressure': typing.ShapeFloatStruct((1,) + coords.horizontal.shape),
+        'pressure': typing.ShapeFloatStruct(coords.horizontal.shape),
     }
     chex.assert_trees_all_equal(out_shape, expected_shape)
 

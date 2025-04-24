@@ -65,7 +65,7 @@ class NeuralEquation(time_integrators.ExplicitODE):
           (layers,) + coords.horizontal.shape
       )
     for field in surface_field_names:
-      output_shapes[field] = ShapeFloatStruct((1,) + coords.horizontal.shape)
+      output_shapes[field] = ShapeFloatStruct(coords.horizontal.shape)
     if input_state_shapes is None:
       input_state_shapes = pytree_mappings.minimal_state_struct()  # default.
     self.explicit_tendency_mapping = mapping_factory(

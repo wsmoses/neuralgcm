@@ -18,6 +18,7 @@ from typing import Callable, Protocol, Sequence
 
 from flax import nnx
 import jax
+import jax.numpy as jnp
 import jax_datetime as jdt
 from neuralgcm.experimental import pytree_transforms
 from neuralgcm.experimental import towers
@@ -233,19 +234,46 @@ class Embedding(nnx.Module):
     self.transform = transform
     self.mesh = mesh
 
-  def __call__(self, inputs: typing.Pytree):
+  def _get_sharded_features(self, inputs: typing.Pytree) -> typing.Pytree:
     inputs = parallelism.with_dycore_sharding(self.mesh, inputs)
     features = self.feature_module(inputs)
     features = parallelism.with_dycore_to_physics_sharding(self.mesh, features)
-    outputs = self.mapping(features)
-    outputs = parallelism.with_physics_to_dycore_sharding(self.mesh, outputs)
-    outputs = self.transform(outputs)
-    outputs = parallelism.with_dycore_sharding(self.mesh, outputs)
+    return features
+
+  def _process_sharded_features(self, features: typing.Pytree) -> typing.Pytree:
+      outputs = self.mapping(features)
+      outputs = parallelism.with_physics_to_dycore_sharding(self.mesh, outputs)
+      outputs = self.transform(outputs)
+      outputs = parallelism.with_dycore_sharding(self.mesh, outputs)
+      return outputs
+
+  def __call__(self, inputs: typing.Pytree):
+    features = self._get_sharded_features(inputs)
+    outputs = self._process_sharded_features(features)
     return outputs
 
   @property
   def output_shapes(self) -> typing.Pytree:
     return self.transform.output_shapes(self.mapping.output_shapes)
+
+
+class MaskedEmbedding(Embedding):
+  """Embeddings + mask to remove nans (has 2 inputs so not a PytreeMapping)."""
+
+  def __call__(self, inputs: typing.Pytree, mask: jnp.ndarray | None = None):
+    features = self._get_sharded_features(inputs)
+
+    if mask is not None:
+      def apply_mask(feature_leaf):
+        if feature_leaf.shape == mask.shape:
+          return jnp.where(
+              mask == 1, jnp.nan_to_num(feature_leaf, nan=0.0), feature_leaf
+          )
+        else:
+          return feature_leaf
+      features = jax.tree.map(apply_mask, features)
+    outputs = self._process_sharded_features(features)
+    return outputs
 
 
 class LandSeaIceEmbedding(nnx.Module):
@@ -283,14 +311,20 @@ class LandSeaIceEmbedding(nnx.Module):
   ) -> typing.Pytree:
     """Returns the embedding output on nodal locations."""
     # get outputs from each model
-    land_outputs = self.land_embedding(inputs)
-    sea_outputs = self.sea_embedding(inputs)
-    sea_ice_outputs = self.sea_ice_embedding(inputs)
 
-    # prepare masks with fractional values in [0, 1]
-    land_fraction = self.land_sea_mask_features(inputs)['land_sea_mask']
-    sea_fraction = 1 - land_fraction
+    # Here we assume NaNs in sea_ice_cover are the superset those in SST.
     sea_ice_fraction = self.sea_ice_features(inputs)['sea_ice_cover']
+    land_mask = jnp.isnan(sea_ice_fraction)
+    land_fraction = jnp.maximum(
+        self.land_sea_mask_features(inputs)['land_sea_mask'],
+        (land_mask),
+    )
+
+    land_outputs = self.land_embedding(inputs, land_mask)
+    sea_outputs = self.sea_embedding(inputs, land_mask)
+    sea_ice_outputs = self.sea_ice_embedding(inputs, land_mask)
+
+    sea_fraction = 1 - land_fraction
     # weight and combine outputs
     land_weight = land_fraction
     sea_ice_weight = sea_ice_fraction * sea_fraction  # ice covered sea

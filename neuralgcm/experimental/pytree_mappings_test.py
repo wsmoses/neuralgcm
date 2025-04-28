@@ -35,6 +35,28 @@ import numpy as np
 class EmbeddingsTest(parameterized.TestCase):
   """Tests embedding modules."""
 
+  def setUp(self):
+    """Set up common parameters and configurations for tests."""
+    super().setUp()
+    self.coords = coordinates.DinosaurCoordinates(
+        horizontal=coordinates.LonLatGrid.T21(),
+        vertical=coordinates.SigmaLevels.equidistant(4),
+    )
+    self.tower_factory = functools.partial(
+        towers.ColumnTower,
+        column_net_factory=functools.partial(
+            standard_layers.MlpUniform, hidden_size=6, n_hidden_layers=2
+        ),
+    )
+    self.mapping_factory = functools.partial(
+        pytree_mappings.ChannelMapping,
+        tower_factory=self.tower_factory,
+    )
+    self.output_shapes = {
+        'a': typing.ShapeFloatStruct((7,) + self.coords.horizontal.shape),
+        'b': typing.ShapeFloatStruct((3,) + self.coords.horizontal.shape),
+    }
+
   def _test_embedding_module(
       self,
       embedding_module: nnx.Module,
@@ -46,73 +68,78 @@ class EmbeddingsTest(parameterized.TestCase):
     chex.assert_trees_all_equal(actual, expected)
 
   def test_embedding(self):
-    coords = coordinates.DinosaurCoordinates(
-        horizontal=coordinates.LonLatGrid.T21(),
-        vertical=coordinates.SigmaLevels.equidistant(4),
-    )
     input_names = ('u', 'v')
-    test_inputs = {k: np.ones(coords.shape) for k in input_names}
+    test_inputs = {k: np.ones(self.coords.shape) for k in input_names}
     input_state_shapes = pytree_utils.shape_structure(test_inputs)
     feature_module = pytree_transforms.PrognosticFeatures(
-        coords, volume_field_names=input_names
+        self.coords, volume_field_names=input_names
     )
-    tower_factory = functools.partial(
-        towers.ColumnTower,
-        column_net_factory=functools.partial(
-            standard_layers.MlpUniform, hidden_size=6, n_hidden_layers=2
-        ),
-    )
-    mapping_factory = functools.partial(
-        pytree_mappings.ChannelMapping,
-        tower_factory=tower_factory,
-    )
-    output_shapes = {
-        'a': typing.ShapeFloatStruct((7,) + coords.horizontal.shape),
-        'b': typing.ShapeFloatStruct((3,) + coords.horizontal.shape),
-    }
     embedding = pytree_mappings.Embedding(
-        output_shapes=output_shapes,
+        output_shapes=self.output_shapes,
         feature_module=feature_module,
-        mapping_factory=mapping_factory,
+        mapping_factory=self.mapping_factory,
         input_state_shapes=input_state_shapes,
         rngs=nnx.Rngs(0),
         mesh=parallelism.Mesh(None),
     )
     self._test_embedding_module(embedding, test_inputs)
 
-  def test_coordinate_state_mapping(self):
-    """Checks that CoordsStateMapping produces outputs with expected shapes."""
-    coords = coordinates.DinosaurCoordinates(
-        horizontal=coordinates.LonLatGrid.T21(),
-        vertical=coordinates.SigmaLevels.equidistant(4),
-    )
-    input_names = ('u', 'v')
-    test_inputs = {k: np.ones(coords.shape) for k in input_names}
+  def test_masked_embedding(self):
+    """Tests MaskedEmbedding's handling of all-NaN inputs with/without mask."""
+    input_names = ('u',)
+    test_inputs = {}
+    test_inputs['u'] = np.ones(self.coords.shape)
+    test_inputs['u'][0, 0, :] = np.nan
+    test_inputs['u'][1, :, 2] = np.nan
     input_state_shapes = pytree_utils.shape_structure(test_inputs)
     feature_module = pytree_transforms.PrognosticFeatures(
-        coords, volume_field_names=input_names
+        self.coords, volume_field_names=input_names
     )
-    tower_factory = functools.partial(
-        towers.ColumnTower,
-        column_net_factory=functools.partial(
-            standard_layers.MlpUniform, hidden_size=6, n_hidden_layers=2
-        ),
+
+    embedding = pytree_mappings.MaskedEmbedding(
+        output_shapes=self.output_shapes,
+        feature_module=feature_module,
+        mapping_factory=self.mapping_factory,
+        input_state_shapes=input_state_shapes,
+        rngs=nnx.Rngs(0),
+        mesh=parallelism.Mesh(None),
     )
-    mapping_factory = functools.partial(
-        pytree_mappings.ChannelMapping,
-        tower_factory=tower_factory,
+
+
+    embedded_features_with_nans = embedding(test_inputs)
+    has_nans_tree = jax.tree.map(
+        lambda x: np.any(np.isnan(x)), embedded_features_with_nans
+    )
+    some_leaves_have_nans = any(jax.tree_util.tree_leaves(has_nans_tree))
+    self.assertTrue(some_leaves_have_nans, 'Outputs should contain some NaNs.')
+
+    mask_for_nan_input = np.isnan(test_inputs['u'])
+    embedded_features_without_nans = embedding(test_inputs, mask_for_nan_input)
+    no_nans_tree = jax.tree.map(
+        lambda x: np.all(~np.isnan(x)), embedded_features_without_nans
+    )
+    all_leaves_are_no_nans = all(jax.tree_util.tree_leaves(no_nans_tree))
+    self.assertTrue(all_leaves_are_no_nans, 'Outputs should not contain NaNs.')
+
+  def test_coordinate_state_mapping(self):
+    """Checks that CoordsStateMapping produces outputs with expected shapes."""
+    input_names = ('u', 'v')
+    test_inputs = {k: np.ones(self.coords.shape) for k in input_names}
+    input_state_shapes = pytree_utils.shape_structure(test_inputs)
+    feature_module = pytree_transforms.PrognosticFeatures(
+        self.coords, volume_field_names=input_names
     )
     embedding_factory = functools.partial(
         pytree_mappings.Embedding,
         feature_module=feature_module,
-        mapping_factory=mapping_factory,
+        mapping_factory=self.mapping_factory,
         input_state_shapes=input_state_shapes,
         mesh=parallelism.Mesh(None),
     )
     volume_field_names = ('u', 'div')
     surface_field_names = ('pressure',)
     state_mapping = pytree_mappings.CoordsStateMapping(
-        coords=coords,
+        coords=self.coords,
         surface_field_names=surface_field_names,
         volume_field_names=volume_field_names,
         embedding_factory=embedding_factory,
@@ -122,9 +149,9 @@ class EmbeddingsTest(parameterized.TestCase):
     out = state_mapping(test_inputs)
     out_shape = pytree_utils.shape_structure(out)
     expected_shape = {
-        'u': typing.ShapeFloatStruct(coords.shape),
-        'div': typing.ShapeFloatStruct(coords.shape),
-        'pressure': typing.ShapeFloatStruct(coords.horizontal.shape),
+        'u': typing.ShapeFloatStruct(self.coords.shape),
+        'div': typing.ShapeFloatStruct(self.coords.shape),
+        'pressure': typing.ShapeFloatStruct(self.coords.horizontal.shape),
     }
     chex.assert_trees_all_equal(out_shape, expected_shape)
 

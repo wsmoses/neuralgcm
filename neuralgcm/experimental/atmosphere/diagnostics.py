@@ -107,8 +107,11 @@ class ExtractPrecipitationAndEvaporation(nnx.Module):
     prognostics_arg_key: Key or index of the prognostics argument in the call
       signature.
     precipitation_scaling: Scaling strategy for the precipitation field. Must be
-      one of `rate` or `cumulative`. If using `cumulative` scaling, `dt` must be
-      set.
+      one of `rate`, `mass_rate` or `cumulative`. If using `cumulative` scaling,
+      `dt` must be set.
+    evaporation_scaling: Scaling strategy for the evaporation field. Must be
+      one of `rate`, `mass_rate` or `cumulative`. If using `cumulative` scaling,
+      `dt` must be set.
     dt: Timestep by which the precipitation is scaled (only used when
       `precipitation_scaling` is set to `cumulative`).
     sim_units: Object defining nondimensionalization and physical constants.

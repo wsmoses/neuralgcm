@@ -32,6 +32,7 @@ from neuralgcm.experimental.coordax import named_axes
 from neuralgcm.experimental.coordax import ndarrays
 from neuralgcm.experimental.coordax import utils
 import numpy as np
+import treescope
 from treescope import lowering
 from treescope import rendering_parts
 # TODO(shoyer): consider making Xarray an optional dependency of core Coordax
@@ -57,7 +58,7 @@ def _dimension_names(*names: str | Coordinate) -> tuple[str, ...]:
   return sum([dims_or_name_tuple(c) for c in names], start=tuple())
 
 
-def _coordinate_attrs(field: Field) -> str:
+def _axes_attrs(field: Field) -> str:
   """Returns a string representation of the coordinate attributes."""
 
   def _coord_name(c: coordinate_systems.Coordinate):
@@ -236,6 +237,11 @@ def _wrap_array_method(name):
       ' in place of regular arrays.'
   )
   return wrapped_func
+
+
+def _in_treescope_abbreviation_mode() -> bool:
+  """Returns True if treescope.abbreviation is set by context or globally."""
+  return treescope.abbreviation_threshold.get() is not None
 
 
 @utils.export
@@ -474,50 +480,32 @@ class Field:
     return result
 
   def __repr__(self):
-    data_repr = textwrap.indent(repr(self.data), prefix=' ' * 13)[13:]
-    if self.axes:
-      axes_repr = (
-          '{\n'
-          + '\n'.join(
-              textwrap.indent(f'{dim!r}: {self.axes[dim]},', prefix=' ' * 12)
-              for dim in self.axes
-          )
-          + '\n        }'
-      )
+    if _in_treescope_abbreviation_mode():
+      return treescope.render_to_text(self)
     else:
-      axes_repr = '{}'
-    return textwrap.dedent(f"""\
-    {type(self).__name__}(
-        data={data_repr},
-        dims={self.dims},
-        axes={axes_repr},
-    )""")
+      with treescope.abbreviation_threshold.set_scoped(1):
+        with treescope.using_expansion_strategy(9, 80):
+          return treescope.render_to_text(self)
 
   def __treescope_repr__(self, path: str | None, subtree_renderer: Any):
     """Treescope handler for Field."""
 
     def _make_label():
       # reuse dim/shape summary from the underlying NamedArray.
-      attrs, summary, data_type = named_axes.attrs_summary_type(
+      attrs, summary, _ = named_axes.attrs_summary_type(
           self.named_array, False
       )
-      axes_attrs = _coordinate_attrs(self)
+      axes_attrs = _axes_attrs(self)
       attrs = ' '.join([attrs, f'axes={axes_attrs}'])
 
       return rendering_parts.summarizable_condition(
           summary=rendering_parts.abbreviation_color(  # non-expanded repr.
               rendering_parts.text(
-                  f'<{type(self).__name__} {attrs} {summary} (wrapping'
-                  f' {data_type})>'
+                  f'<{type(self).__name__} {attrs} {summary}>'
               )
           ),
           detail=rendering_parts.siblings(
               rendering_parts.text(f'<{type(self).__name__} ('),
-              rendering_parts.fold_condition(
-                  expanded=rendering_parts.comment_color(
-                      rendering_parts.text('  # ' + summary)
-                  )
-              ),
           ),
       )
 
@@ -525,7 +513,7 @@ class Field:
         self,
         path,
         subtree_renderer,
-        fields_or_attribute_names=('dims', 'axes'),
+        fields_or_attribute_names=('dims', 'shape', 'axes'),
     )
     indented_children = rendering_parts.indented_children(children)
     return rendering_parts.build_custom_foldable_tree_node(
@@ -537,7 +525,7 @@ class Field:
             placeholder_thunk=_make_label,
         ),
         path=path,
-        expand_state=rendering_parts.ExpandState.COLLAPSED,
+        expand_state=rendering_parts.ExpandState.WEAKLY_COLLAPSED,
     )
 
   def __treescope_ndarray_adapter__(self):
@@ -547,7 +535,7 @@ class Field:
       attrs, array_summary, data_type = named_axes.attrs_summary_type(
           field.named_array, inspect_data
       )
-      axes_attrs = _coordinate_attrs(field)
+      axes_attrs = _axes_attrs(field)
       attrs = ', '.join([attrs, f'axes={axes_attrs}'])
       return attrs, array_summary, data_type
 

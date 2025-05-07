@@ -57,12 +57,10 @@ def attrs_summary_type(
   else:
     contained_type = type(named_array.data).__name__
 
-  type_info = dtype_util.get_dtype_name(named_array.dtype)
   attrs_parts = []
   attrs_parts.append(f'dims={named_array.dims}')
   attrs_parts.append(f'shape={named_array.shape}')
   summary_parts = []
-  summary_parts.append(f'dtype={type_info}')
   if (
       inspect_data
       and isinstance(named_array.data, jax.Array)
@@ -609,11 +607,8 @@ class NamedArray:
     """Treescope handler."""
 
     def _make_label():
-      attrs, summary, contained_type = attrs_summary_type(self, False)
-      return rendering_parts.text(
-          f'<{type(self).__name__}({attrs} {summary}) (wrapping'
-          f' {contained_type})>'
-      )
+      attrs, summary, _ = attrs_summary_type(self, False)
+      return rendering_parts.text(f'<{type(self).__name__}({attrs} {summary})>')
 
     return rendering_parts.abbreviation_color(
         lowering.maybe_defer_rendering(

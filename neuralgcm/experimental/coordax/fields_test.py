@@ -155,15 +155,7 @@ class FieldTest(parameterized.TestCase):
     testing.assert_fields_allclose(actual=actual, desired=expected_result)
 
   def test_field_repr(self):
-    expected = textwrap.dedent("""\
-        Field(
-            data=array([[1, 2, 3],
-                        [4, 5, 6]]),
-            dims=('x', 'y'),
-            axes={
-                'y': coordax.LabeledAxis('y', ticks=array([7, 8, 9])),
-            },
-        )""")
+    expected = "<Field dims=('x', 'y') shape=(2, 3) axes={'y': LabeledAxis} >"
     actual = coordax.wrap(
         np.array([[1, 2, 3], [4, 5, 6]]),
         'x',

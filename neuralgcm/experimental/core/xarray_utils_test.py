@@ -21,6 +21,7 @@ import jax
 import jax_datetime as jdt
 from neuralgcm.experimental import coordax as cx
 from neuralgcm.experimental.core import coordinates
+from neuralgcm.experimental.core import parallelism
 from neuralgcm.experimental.core import xarray_utils
 import numpy as np
 import xarray
@@ -130,7 +131,7 @@ class ReadFieldsFromXarrayTest(parameterized.TestCase):
           self.mock_data, input_specs, mesh_shape, field_partition
       )
       self.assert_data_and_specs_keys_match(actual, input_specs)
-      coord_shard = coordinates.CoordinateShard(
+      coord_shard = parallelism.CoordinateShard(
           coords, mesh_shape, field_partition
       )
       expected_coord = cx.compose_coordinates(self.timedelta, coord_shard)
@@ -150,7 +151,7 @@ class ReadFieldsFromXarrayTest(parameterized.TestCase):
           field_partition,
       )
       self.assert_data_and_specs_keys_match(actual, input_specs)
-      coord_shard = coordinates.CoordinateShard(
+      coord_shard = parallelism.CoordinateShard(
           coords, mesh_shape, field_partition
       )
       expected_coord = cx.compose_coordinates(self.timedelta, coord_shard)
@@ -170,7 +171,7 @@ class ReadFieldsFromXarrayTest(parameterized.TestCase):
           field_partition,
       )
       self.assert_data_and_specs_keys_match(actual, input_specs)
-      coord_shard = coordinates.CoordinateShard(
+      coord_shard = parallelism.CoordinateShard(
           coords, mesh_shape, field_partition
       )
       expected_coord = cx.compose_coordinates(self.timedelta, coord_shard)
@@ -190,7 +191,7 @@ class ReadFieldsFromXarrayTest(parameterized.TestCase):
           field_partition,
       )
       self.assert_data_and_specs_keys_match(actual, input_specs)
-      coord_shard = coordinates.CoordinateShard(
+      coord_shard = parallelism.CoordinateShard(
           coords, mesh_shape, field_partition
       )
       expected_coord = cx.compose_coordinates(self.timedelta, coord_shard)

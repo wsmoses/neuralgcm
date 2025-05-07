@@ -237,7 +237,7 @@ def read_sharded_fields_from_xarray(
   """
 
   def wrap_coordinate_shard(coord: cx.Coordinate) -> cx.Coordinate:
-    return coordinates.CoordinateShard(coord, mesh_shape, dim_partitions)
+    return parallelism.CoordinateShard(coord, mesh_shape, dim_partitions)
 
   is_coordinate = lambda x: isinstance(x, cx.Coordinate)
   shard_specs = jax.tree.map(

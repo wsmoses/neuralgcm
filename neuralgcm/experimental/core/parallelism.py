@@ -15,17 +15,18 @@
 
 import collections
 import dataclasses
-from typing import Type, TypeGuard
+import math
+from typing import Type, TypeGuard, Self
 import fiddle as fdl
 from fiddle import selectors
 from fiddle import tagging
 import jax
 import jax.numpy as jnp
 from neuralgcm.experimental import coordax as cx
-from neuralgcm.experimental.core import coordinates
 from neuralgcm.experimental.core import pytree_utils
 from neuralgcm.experimental.core import typing
 import numpy as np
+import xarray
 
 P = jax.sharding.PartitionSpec
 
@@ -67,6 +68,79 @@ def get_partition_spec(
 ) -> P:
   """Returns partition spec for `field`."""
   return P(*[dim_partitions.get(d, None) for d in dims])
+
+
+@jax.tree_util.register_static
+@dataclasses.dataclass(frozen=True)
+class CoordinateShard(cx.Coordinate):
+  """Coordinate that represents a shard of a full coordinate system.
+
+  This class helps tag array shards that represent a subset of values of a
+  `full_coordinare`. The most common use case is during data ingestion where
+  shards are read from disk and are not yet converted to a sharded array.
+  """
+
+  coordinate: cx.Coordinate
+  spmd_mesh_shape: collections.OrderedDict[str, int]
+  dimension_partitions: dict[str, None | str | tuple[str, ...]]
+
+  def __hash__(self):
+    """Hash implementation that avoids un-hashable mesh and partitions attrs."""
+    spmd_mesh_tuple = tuple(self.spmd_mesh_shape.items())
+    partitions_tuple = tuple(self.dimension_partitions.items())
+    return hash((self.coordinate, spmd_mesh_tuple, partitions_tuple))
+
+  def __eq__(self, other):
+    return (
+        isinstance(other, CoordinateShard)
+        and self.coordinate == other.coordinate
+        and self.spmd_mesh_shape == other.spmd_mesh_shape
+        and self.dimension_partitions == other.dimension_partitions
+    )
+
+  @property
+  def dims(self) -> tuple[str, ...]:
+    return self.coordinate.dims  # sharding only affects the shape.
+
+  @property
+  def shape(self) -> tuple[int, ...]:
+    """Shape of the coordinate."""
+    dims, full_shape = self.dims, self.coordinate.shape
+    shard_shape = []
+    for dim, full_size in zip(dims, full_shape, strict=True):
+      axes = self.dimension_partitions.get(dim, None)
+      if not isinstance(axes, tuple):
+        axes = (axes,)
+      n_shards = math.prod(self.spmd_mesh_shape.get(axis, 1) for axis in axes)
+      size, reminder = divmod(full_size, n_shards)
+      if reminder:
+        raise ValueError(
+            f'Dimension {dim} has size {full_size} which is not divisible by'
+            f' the number of shards {n_shards}.'
+        )
+      shard_shape.append(size)
+    return tuple(shard_shape)
+
+  @property
+  def fields(self) -> dict[str, cx.Field]:
+    """A maps from field names to their values."""
+    return {}
+
+  @classmethod
+  def from_xarray(
+      cls, dims: tuple[str, ...], coords: xarray.Coordinates
+  ) -> Self | cx.NoCoordinateMatch:
+    return cx.NoCoordinateMatch(
+        'CoordinateShard cannot be deterministically inferred from xarray.'
+    )
+
+
+def get_unsharded(coordinate: cx.Coordinate) -> cx.Coordinate:
+  """Returns the unsharded coordinate of a CoordinateShard."""
+  unsharded = []
+  for c in cx.canonicalize_coordinates(coordinate):
+    unsharded.append(c.coordinate if isinstance(c, CoordinateShard) else c)
+  return cx.compose_coordinates(*unsharded)
 
 
 # TODO(dkochkov): drop array_partitions specification when partitions can be
@@ -216,7 +290,7 @@ class Mesh:
     sharding = self._get_named_sharding(example_field.dims, schema)
 
     coord = cx.get_coordinate(example_field)
-    unsharded_coord = coordinates.get_unsharded(coord)
+    unsharded_coord = get_unsharded(coord)
 
     single_device_arrays = [
         jax.device_put(field.data, device)

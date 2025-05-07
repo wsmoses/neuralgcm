@@ -20,6 +20,7 @@ import jax
 from neuralgcm.experimental import coordax as cx
 from neuralgcm.experimental.coordax import testing as coordax_testing
 from neuralgcm.experimental.core import coordinates
+from neuralgcm.experimental.core import parallelism
 import numpy as np
 
 
@@ -87,7 +88,7 @@ class CoordinatesTest(parameterized.TestCase):
       ),
       dict(
           testcase_name='coordinate_shard_none',
-          coords=coordinates.CoordinateShard(
+          coords=parallelism.CoordinateShard(
               coordinate=coordinates.LonLatGrid.T42(),
               spmd_mesh_shape=collections.OrderedDict(x=2, y=1, z=2),
               dimension_partitions={'longitude': None, 'latitude': None}
@@ -98,7 +99,7 @@ class CoordinatesTest(parameterized.TestCase):
       ),
       dict(
           testcase_name='coordinate_shard_longitude',
-          coords=coordinates.CoordinateShard(
+          coords=parallelism.CoordinateShard(
               coordinate=coordinates.LonLatGrid.T42(),
               spmd_mesh_shape=collections.OrderedDict(x=2, y=1, z=2),
               dimension_partitions={'longitude': ('x', 'z'), 'latitude': None}
@@ -109,7 +110,7 @@ class CoordinatesTest(parameterized.TestCase):
       ),
       dict(
           testcase_name='coordinate_shard_longitude_and_latitude',
-          coords=coordinates.CoordinateShard(
+          coords=parallelism.CoordinateShard(
               coordinate=coordinates.LonLatGrid.T42(),
               spmd_mesh_shape=collections.OrderedDict(x=2, y=4, z=2),
               dimension_partitions={'longitude': 'x', 'latitude': ('y', 'z')}

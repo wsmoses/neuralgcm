@@ -20,6 +20,7 @@ used to indicate strictly positional dimensions.
 
 Some code and documentation is adapted from penzai.core.named_axes.
 """
+
 from __future__ import annotations
 
 import dataclasses
@@ -33,7 +34,6 @@ import jax
 import jax.numpy as jnp
 from neuralgcm.experimental.coordax import ndarrays
 import numpy as np
-from treescope import dtype_util
 from treescope import lowering
 from treescope import ndarray_adapters
 from treescope import rendering_parts
@@ -507,6 +507,15 @@ class _ShapedLeaf:
   shape: tuple[int, ...]
 
 
+def _tmp_axis_name(x: NamedArray, excluded_names: set[str]) -> str:
+  """Returns axis name that is not present in `x` or `excluded_names`."""
+  for i in range(x.ndim):
+    name = f'tmp_axis_{i}'
+    if name not in excluded_names and name not in x.named_dims:
+      return name
+  raise ValueError(f'Cannot find a temporary axis for {x=} & {excluded_names=}')
+
+
 def _named_shape(
     dims: tuple[str | None, ...], shape: tuple[int, ...]
 ) -> dict[str, int]:
@@ -817,6 +826,27 @@ class NamedArray:
 
     order = tuple(self.dims.index(dim) for dim in dims)
     return type(self)(self.data.transpose(order), dims)
+
+  def broadcast_like(self, other: Self) -> Self:
+    """Broadcasts the array to the shape of the other array."""
+    if any(dim is None for dim in self.dims):
+      raise ValueError(
+          f'cannot broadcast array with unnamed dimensions: {self.dims}'
+      )
+    missing = tuple(set(self.dims) - set(other.dims))
+    if missing:
+      raise ValueError(
+          f'cannot broadcast array with dimensions {self.dims} to array with '
+          f'dimensions {other.dims} because {missing} are not in {other.dims}'
+      )
+    # To support broadcasting to a NamedArray with unnamed dimensions, we
+    # label these dimensions with unique temporary axes.
+    tmp_axes = []
+    for _ in range(other.dims.count(None)):
+      tmp_axes.append(_tmp_axis_name(other, set(tmp_axes)))
+    other = other.tag(*tmp_axes)
+    result = nmap(lambda x, y: x, out_axes=other.named_axes)(self, other)
+    return result.untag(*tmp_axes)
 
   # Convenience wrappers: Elementwise infix operators.
   __lt__ = _nmap_binary_op(operator.lt, 'jax.Array.__lt__')

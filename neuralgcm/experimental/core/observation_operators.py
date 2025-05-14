@@ -295,3 +295,35 @@ class LearnedSparseScalarObservationFromNeighbors(nnx.Module):
     observations['longitude'] = lon_query
     observations['latitude'] = lat_query
     return observations
+
+
+@dataclasses.dataclass
+class MultiObservationOperator(ObservationOperator):
+  """Operator that dispatches queries to multiple operators.
+
+  Attributes:
+    keys_to_operator: A dictionary mapping query keys to observation operators.
+  """
+
+  keys_to_operator: dict[tuple[str, ...], ObservationOperator]
+
+  def observe(
+      self,
+      inputs: dict[str, cx.Field],
+      query: dict[str, cx.Field | cx.Coordinate],
+  ) -> dict[str, cx.Field]:
+    outputs = {}
+    supported_keys = set(sum(self.keys_to_operator.keys(), start=()))
+    query_keys = set(query.keys())
+    if not query_keys.issubset(supported_keys):
+      raise ValueError(
+          f'query keys {query_keys} are not a subset of supported keys'
+          f' {supported_keys}'
+      )
+    for key_tuple, obs_op in self.keys_to_operator.items():
+      sub_query = {}
+      for key in key_tuple:
+        if key in query:
+          sub_query[key] = query[key]
+      outputs |= obs_op.observe(inputs, sub_query)
+    return outputs

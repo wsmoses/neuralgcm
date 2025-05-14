@@ -236,6 +236,68 @@ class LearnedSparseScalarObservationFromNeighborsTest(parameterized.TestCase):
       self.assertEqual(cx.get_coordinate(actual['temperature']), sparse_coord)
 
 
+class MultiObservationOperatorTest(parameterized.TestCase):
+  """Tests MultiObservationOperator implementation."""
+
+  def test_multiple_operators(self):
+
+    coord_a = cx.LabeledAxis('a_ax', np.arange(3))
+    coord_b = cx.LabeledAxis('b_ax', np.arange(4))
+    coord_c = cx.LabeledAxis('c_ax', np.arange(5))
+
+    field_a = cx.wrap(np.random.rand(3), coord_a)
+    field_b = cx.wrap(np.random.rand(4), coord_b)
+    field_c = cx.wrap(np.random.rand(5), coord_c)
+    op1 = observation_operators.DataObservationOperator({'a': field_a})
+    op2 = observation_operators.DataObservationOperator(
+        {'b': field_b, 'c': field_c}
+    )
+    inputs = {}
+
+    with self.subTest('all_keys_handled'):
+      keys_to_operator = {
+          ('a',): op1,
+          ('b', 'c'): op2,
+      }
+      multi_op = observation_operators.MultiObservationOperator(
+          keys_to_operator
+      )
+      query = {
+          'a': coord_a,
+          'b': coord_b,
+          'c': coord_c,
+      }
+      expected_obs = {
+          'a': field_a,
+          'b': field_b,
+          'c': field_c,
+      }
+      actual_obs = multi_op.observe(inputs, query)
+      chex.assert_trees_all_equal(actual_obs, expected_obs)
+
+    with self.subTest('query_key_not_handled_by_any_operator'):
+      keys_to_operator = {
+          ('a',): op1,
+          ('b',): op2,
+      }
+      multi_op = observation_operators.MultiObservationOperator(
+          keys_to_operator
+      )
+      query = {
+          'a': coord_a,
+          'b': coord_b,
+          'c': coord_c,
+      }
+      supported_keys = set(sum(keys_to_operator.keys(), start=()))
+      query_keys = set(query.keys())
+      expected_message = (
+          f'query keys {query_keys} are not a subset of supported keys'
+          f' {supported_keys}'
+      )
+      with self.assertRaisesWithLiteralMatch(ValueError, expected_message):
+        multi_op.observe(inputs, query)
+
+
 if __name__ == '__main__':
   config.update('jax_traceback_filtering', 'off')
   absltest.main()

@@ -29,6 +29,7 @@ from neuralgcm.experimental.core import observation_operators
 from neuralgcm.experimental.core import orographies
 from neuralgcm.experimental.core import parallelism
 from neuralgcm.experimental.core import pytree_utils
+from neuralgcm.experimental.core import spherical_transforms
 from neuralgcm.experimental.core import typing
 from neuralgcm.experimental.core import units
 
@@ -50,6 +51,8 @@ class PressureLevelObservationOperator(
   """
 
   primitive_equation: equations.PrimitiveEquations
+  ylm_transform: spherical_transforms.SphericalHarmonicsTransform
+  sigma_levels: coordinates.SigmaLevels
   orography: orographies.ModalOrography
   pressure_levels: coordinates.PressureLevels
   sim_units: units.SimUnits
@@ -73,15 +76,6 @@ class PressureLevelObservationOperator(
     """
     inputs = copy.copy(inputs)  # avoid mutating inputs.
     time = inputs.pop('time')
-    input_coords = cx.get_coordinate(inputs['divergence'])
-    # TODO(dkochkov): try to remove use of DinosaurCoordinates where possible,
-    # as reconstructing them from axes results in a CartesianProduct instance
-    # due to inheritance from cx.CartesianProduct.
-    input_coords = coordinates.DinosaurCoordinates(
-        vertical=input_coords.coordinates[0],
-        horizontal=cx.compose_coordinates(*input_coords.coordinates[1:])
-    )
-    grid = input_coords.horizontal.to_lon_lat_grid()
     nondim_pressure = dataclasses.replace(
         self.pressure_levels,
         centers=self.sim_units.nondimensionalize(
@@ -89,10 +83,10 @@ class PressureLevelObservationOperator(
         ),
     )
     nondim_target_coords = coordinates.DinosaurCoordinates(
-        horizontal=grid, vertical=nondim_pressure
+        horizontal=self.ylm_transform.nodal_grid, vertical=nondim_pressure
     )
     target_coords = coordinates.DinosaurCoordinates(
-        horizontal=grid, vertical=self.pressure_levels
+        horizontal=self.ylm_transform.nodal_grid, vertical=self.pressure_levels
     )
     inputs = jax.tree.map(lambda x: x.data, inputs, is_leaf=cx.is_field)
     # TODO(dkochkov): make primitive_equation_to_uvtz work with flat structure
@@ -105,12 +99,12 @@ class PressureLevelObservationOperator(
     # prognostic fields in observer to remove this dependency.
     pressure_interpolated_state = state_conversion.primitive_equations_to_uvtz(
         source_state=source_state,
-        input_coords=input_coords,
+        ylm_transform=self.ylm_transform,
+        sigma_levels=self.sigma_levels,
         primitive_equations=self.primitive_equation,
         orography=self.orography,
         target_coords=nondim_target_coords,
         sim_units=self.sim_units,
-        mesh=self.mesh,
     )
     pressure_interpolated_state = parallelism.with_physics_sharding(
         self.mesh, pressure_interpolated_state
@@ -156,8 +150,10 @@ class SigmaLevelObservationOperator(
   """
 
   primitive_equation: equations.PrimitiveEquations
-  orography: orographies.ModalOrography
+  ylm_transform: spherical_transforms.SphericalHarmonicsTransform
   sigma_levels: coordinates.SigmaLevels
+  orography: orographies.ModalOrography
+  target_sigma_levels: coordinates.SigmaLevels
   sim_units: units.SimUnits
   tracer_names: Sequence[str]
   observation_correction: pytree_mappings.CoordsStateMapping | None
@@ -179,17 +175,9 @@ class SigmaLevelObservationOperator(
     """
     inputs = copy.copy(inputs)  # avoid mutating inputs.
     time = inputs.pop('time')
-    input_coords = cx.get_coordinate(inputs['divergence'])
-    # TODO(dkochkov): try to remove use of DinosaurCoordinates where possible,
-    # as reconstructing them from axes results in a CartesianProduct instance
-    # due to inheritance from cx.CartesianProduct.
-    input_coords = coordinates.DinosaurCoordinates(
-        vertical=input_coords.coordinates[0],
-        horizontal=cx.compose_coordinates(*input_coords.coordinates[1:])
-    )
-    grid = input_coords.horizontal.to_lon_lat_grid()
     target_coords = coordinates.DinosaurCoordinates(
-        horizontal=grid, vertical=self.sigma_levels
+        horizontal=self.ylm_transform.nodal_grid,
+        vertical=self.target_sigma_levels
     )
     inputs = jax.tree.map(lambda x: x.data, inputs, is_leaf=cx.is_field)
     # TODO(dkochkov): make primitive_equation_to_uvtz work with flat structure
@@ -202,12 +190,12 @@ class SigmaLevelObservationOperator(
     # prognostic fields in observer to remove this dependency.
     interpolated_state = state_conversion.primitive_equations_to_sigma(
         source_state=source_state,
-        input_coords=input_coords,
+        ylm_transform=self.ylm_transform,
+        sigma_levels=self.sigma_levels,
         primitive_equations=self.primitive_equation,
         orography=self.orography,
         target_coords=target_coords,
         sim_units=self.sim_units,
-        mesh=self.mesh,
     )
     interpolated_state = parallelism.with_physics_sharding(
         self.mesh, interpolated_state
@@ -232,7 +220,7 @@ class SigmaLevelObservationOperator(
         for k, v in interpolated_state.items() if k != 'surface_pressure'
     }
     observations_fields['surface_pressure'] = cx.wrap(
-        interpolated_state['surface_pressure'], grid
+        interpolated_state['surface_pressure'], self.ylm_transform.nodal_grid
     )
     return observation_operators.DataObservationOperator(
         observations_fields | {'time': time}

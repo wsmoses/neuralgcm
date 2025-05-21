@@ -260,6 +260,44 @@ class StandardPytreeTransformsTest(parameterized.TestCase):
       ys = batch_shift_and_normalize(xs)
       _check_mean_and_std(ys, zero_means, unit_stds)
 
+  @parameterized.named_parameters(
+      dict(testcase_name='standard', max_value=10.0, atol_identity=1e-2),
+      dict(testcase_name='standard_large', max_value=100.0, atol_identity=1e-2),
+  )
+  def test_soft_clip_transform(self, max_value: float, atol_identity: float):
+    """Tests that SoftClip transform works as expected."""
+    transform_instance = pytree_transforms.SoftClip(max_value=max_value)
+
+    inputs = {
+        '~same': np.linspace(
+            -max_value * 0.3, max_value * 0.3, 11, dtype=float
+        ),
+        'tracers': {
+            'y': np.array(
+                [-max_value * 1.5, 0.0, max_value * 0.8, max_value * 1.5],
+                dtype=float,
+            ),
+        },
+    }
+    clipped = transform_instance(inputs)
+
+    with self.subTest('valid_range'):
+
+      def check_bounds(x_leaf):
+        self.assertTrue(np.all(x_leaf <= max_value))
+        self.assertTrue(np.all(x_leaf >= -max_value))
+
+      jax.tree_util.tree_map(check_bounds, clipped)
+
+    with self.subTest('near_identity_in_range'):
+      jax.tree_util.tree_map(
+          lambda x_orig, y_clipped: np.testing.assert_allclose(
+              y_clipped, x_orig, atol=atol_identity
+          ),
+          inputs['~same'],
+          clipped['~same'],
+      )
+
 
 class InputsFeaturesTest(parameterized.TestCase):
   """Tests input features modules."""

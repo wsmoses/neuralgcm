@@ -163,9 +163,7 @@ class Orography(nnx.Module):
     nodal_orography = coordinates.field_from_xarray(nodal_orography)
     data_grid = cx.get_coordinate(nodal_orography)
     # TODO(dkochkov) Introduce objects for specifying nodal-modal conversions.
-    ylm_grid = dino_xarray_utils.LINEAR_SHAPE_TO_GRID_DICT[data_grid.shape](
-        spherical_harmonics_impl=self.grid.spherical_harmonics_impl
-    )
+    ylm_grid = dino_xarray_utils.LINEAR_SHAPE_TO_GRID_DICT[data_grid.shape]()
     data_grid = coordinates.LonLatGrid.from_dinosaur_grid(ylm_grid)
     nodal_orography = nodal_orography.data
     nodal_orography = spatial_filter(nodal_orography)

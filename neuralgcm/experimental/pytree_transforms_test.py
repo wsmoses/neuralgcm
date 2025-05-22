@@ -261,20 +261,20 @@ class StandardPytreeTransformsTest(parameterized.TestCase):
       _check_mean_and_std(ys, zero_means, unit_stds)
 
   @parameterized.named_parameters(
-      dict(testcase_name='standard', max_value=10.0, atol_identity=1e-2),
-      dict(testcase_name='standard_large', max_value=100.0, atol_identity=1e-2),
+      dict(testcase_name='standard', scale=10.0, atol_identity=1e-1),
+      dict(testcase_name='standard_large', scale=100.0, atol_identity=1),
   )
-  def test_soft_clip_transform(self, max_value: float, atol_identity: float):
-    """Tests that SoftClip transform works as expected."""
-    transform_instance = pytree_transforms.SoftClip(max_value=max_value)
+  def test_soft_clip_transform(self, scale: float, atol_identity: float):
+    """Tests that Tanh transform works as expected."""
+    transform_instance = pytree_transforms.Tanh(scale=scale)
 
     inputs = {
         '~same': np.linspace(
-            -max_value * 0.3, max_value * 0.3, 11, dtype=float
+            -scale * 0.3, scale * 0.3, 11, dtype=float
         ),
         'tracers': {
             'y': np.array(
-                [-max_value * 1.5, 0.0, max_value * 0.8, max_value * 1.5],
+                [-scale * 1.5, 0.0, scale * 0.8, scale * 1.5],
                 dtype=float,
             ),
         },
@@ -284,8 +284,8 @@ class StandardPytreeTransformsTest(parameterized.TestCase):
     with self.subTest('valid_range'):
 
       def check_bounds(x_leaf):
-        self.assertTrue(np.all(x_leaf <= max_value))
-        self.assertTrue(np.all(x_leaf >= -max_value))
+        self.assertTrue(np.all(x_leaf <= scale))
+        self.assertTrue(np.all(x_leaf >= -scale))
 
       jax.tree_util.tree_map(check_bounds, clipped)
 

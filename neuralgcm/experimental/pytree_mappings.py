@@ -165,6 +165,7 @@ class MappingWithNormalizedInputs(nnx.Module):
       *,
       mapping_factory: PytreeMappingFactory,
       normalization_factory: pytree_transforms.TransformFactory,
+      clip_factory: pytree_transforms.TransformFactory = pytree_transforms.Identity,
       rngs: nnx.Rngs,
   ):
     self._output_shapes = output_shapes
@@ -172,6 +173,7 @@ class MappingWithNormalizedInputs(nnx.Module):
         input_shapes, ndim=3, axis=-3
     )
     self.normalization = normalization_factory(in_shapes, rngs=rngs)
+    self.clip = clip_factory()
     self.mapping = mapping_factory(
         input_shapes=self.normalization.output_shapes(in_shapes),
         output_shapes=output_shapes,
@@ -187,7 +189,7 @@ class MappingWithNormalizedInputs(nnx.Module):
 
   def __call__(self, inputs: typing.Pytree) -> typing.Pytree:
     expanded_inputs = pytree_utils.expand_to_ndim(inputs, ndim=3, axis=-3)
-    return self.mapping(self.normalize(expanded_inputs))
+    return self.mapping(self.clip(self.normalize(expanded_inputs)))
 
 
 # TODO(dkochkov) Consider parameterizing this with mapping factories.

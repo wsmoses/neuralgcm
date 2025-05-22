@@ -26,6 +26,7 @@ of these can be crudely separated into two categories:
 from __future__ import annotations
 
 import abc
+import dataclasses
 import functools
 import re
 from typing import Callable, Protocol, Sequence
@@ -1223,41 +1224,23 @@ class CombinedFeatures(TransformABC):
     return self.transform.output_shapes(out_shapes)
 
 
-@nnx_compat.dataclass
-class SoftClip(nnx.Module):
-  """Transforms inputs by clipping values to a range with smooth boundaries.
+@dataclasses.dataclass
+class Tanh(nnx.Module):
+  """Transforms inputs by clipping using tanh.
 
   Attributes:
-    max_value: Specifies the range (-max_value, max_value) of return values.
-      Must be positive.
-    hinge_softness: Controls the softness of the smoothing at the boundaries.
-      values outside of the max_value range are mapped into intervals of width
-      approximately `log(2) * hinge_softness` on the interior of each boundary.
+    scale: A positive float that determines the range of the output.
+      The output values will be in the range (-scale, scale).
   """
-
-  max_value: float
-  hinge_softness: float = 1.0
+  scale: float
 
   def __post_init__(self):
-    if self.max_value <= 0 or self.hinge_softness <= 0:
+    if self.scale <= 0:
       raise ValueError(
-          'max_value and hinge_softness must be positive. Got:'
-          f' max_value={self.max_value}, hinge_softness={self.hinge_softness}'
+          'scale must be positive. Got:'
+          f' scale={self.scale}'
       )
 
   def __call__(self, inputs: typing.Pytree) -> typing.Pytree:
-    def _internal_softplus(val: float) -> float:
-      return self.hinge_softness * jax.nn.softplus(val / self.hinge_softness)
-
-    min_val = -self.max_value
-    range_val = self.max_value - min_val
-
-    def _clip_fn(x_input: float) -> float:
-      inner_arg = x_input - min_val
-      g1 = _internal_softplus(inner_arg)
-      outer_arg = range_val - g1
-      g2 = _internal_softplus(outer_arg)
-      denominator_scaling = _internal_softplus(range_val)
-      return -g2 * range_val / denominator_scaling + self.max_value
-
-    return jax.tree.map(_clip_fn, inputs)
+    clip_fn = lambda x: self.scale * jax.nn.tanh(x / self.scale)
+    return jax.tree.map(clip_fn, inputs)

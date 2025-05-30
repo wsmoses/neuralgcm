@@ -17,7 +17,8 @@
 from __future__ import annotations
 
 import dataclasses
-from typing import Any, Iterable, Literal, Self, TYPE_CHECKING, cast
+import datetime
+from typing import Any, cast, Iterable, Literal, Self, TYPE_CHECKING
 
 from dinosaur import coordinate_systems as dinosaur_coordinates
 from dinosaur import sigma_coordinates
@@ -27,7 +28,9 @@ import jax
 import jax.numpy as jnp
 from neuralgcm.experimental import coordax as cx
 import numpy as np
+import treescope
 import xarray
+
 
 if TYPE_CHECKING:
   # import only under TYPE_CHECKING to avoid circular dependency
@@ -47,6 +50,11 @@ SPHERICAL_HARMONICS_METHODS = {
     'real': RealSphericalHarmonics,
     'fast': FastSphericalHarmonics,
 }
+
+
+def _in_treescope_abbreviation_mode() -> bool:
+  """Returns True if treescope.abbreviation is set by context or globally."""
+  return treescope.abbreviation_threshold.get() is not None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -133,6 +141,29 @@ class TimeDelta(cx.Coordinate):
 
   def __getitem__(self, key: slice) -> Self:
     return type(self)(self.deltas[key])
+
+  def __repr__(self):
+    if _in_treescope_abbreviation_mode():
+      return treescope.render_to_text(self)
+    else:
+      with treescope.abbreviation_threshold.set_scoped(1):
+        with treescope.using_expansion_strategy(9, 80):
+          return treescope.render_to_text(self)
+
+  def __treescope_repr__(self, path: str | None, subtree_renderer: Any):
+    """Treescope handler for Field."""
+    to_str = lambda x: str(datetime.timedelta(seconds=int(x.astype(int))))
+    dts = np.apply_along_axis(to_str, axis=1, arr=self.deltas[:, np.newaxis])
+    if dts.size < 6:
+      deltas = '[' + ', '.join([str(x) for x in dts]) + ']'
+    else:
+      deltas = '[' + ', '.join([str(x) for x in dts[:2]])
+      deltas += ', ..., '
+      deltas += ', '.join([str(x) for x in dts[-2:]]) + ']'
+    heading = f'<{type(self).__name__}'
+    return treescope.rendering_parts.siblings(
+        heading, treescope.rendering_parts.text(deltas), '>'
+    )
 
 
 #

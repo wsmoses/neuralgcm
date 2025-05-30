@@ -686,14 +686,14 @@ class NamedArray:
     if len(dims) <= data.ndim:
       dims = (None,) * (data.ndim - len(dims)) + dims
     else:
-      trimmed_dims = dims[: -data.ndim]
+      trimmed_dims = dims[: -data.ndim] if data.ndim else dims
       if any(dim is not None for dim in trimmed_dims):
         raise ValueError(
             'cannot trim named dimensions when unflattening to a NamedArray:'
             f' {trimmed_dims}. {_VALID_PYTREE_OPS} If you are using vmap or'
             ' scan, the first dimension must be unnamed.'
         )
-      dims = dims[-data.ndim :]
+      dims = dims[-data.ndim :] if data.ndim else ()
     return cls(data, dims)
 
   def tag(self, *dims: str | ellipsis | None) -> Self:

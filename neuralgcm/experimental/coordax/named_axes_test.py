@@ -144,6 +144,18 @@ class NamedAxesTest(parameterized.TestCase):
     ):
       jax.tree.map(lambda x: x[0, :], array)
 
+  def test_tree_map_cannot_trim_scalar(self):
+    data = np.arange(10)
+    array = named_axes.NamedArray(data, ('x',))
+    with self.assertRaisesRegex(
+        ValueError,
+        re.escape(
+            'cannot trim named dimensions when unflattening to a NamedArray:'
+            " ('x',)."
+        ),
+    ):
+      jax.tree.map(lambda x: jnp.take(x, 0), array)
+
   def test_tree_map_wrong_dim_size(self):
     data = np.arange(10).reshape((2, 5))
     array = named_axes.NamedArray(data, ('x', 'y'))
@@ -236,6 +248,12 @@ class NamedAxesTest(parameterized.TestCase):
   def test_scan(self):
     data = np.arange(10).reshape((2, 5))
     array = named_axes.NamedArray(data, (None, 'y'))
+    _, actual = jax.lax.scan(lambda _, x: (None, x), init=None, xs=array)
+    assert_named_array_equal(actual, array)
+
+  def test_scan_on_scalar(self):
+    data = np.arange(10)
+    array = named_axes.NamedArray(data, (None,))
     _, actual = jax.lax.scan(lambda _, x: (None, x), init=None, xs=array)
     assert_named_array_equal(actual, array)
 

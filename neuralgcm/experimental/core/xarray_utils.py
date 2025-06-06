@@ -164,6 +164,8 @@ def read_fields_from_xarray(
     A dictionary of dictionaries of coordax.Fields.
   """
   is_coordinate = lambda x: isinstance(x, cx.Coordinate)
+  is_cartesian_prod = lambda x: isinstance(x, cx.CartesianProduct)
+  is_coord_primitive = lambda x: is_coordinate(x) and not is_cartesian_prod(x)
   result = {}
 
   for source, observation_specs in input_specs.items():
@@ -185,7 +187,7 @@ def read_fields_from_xarray(
     variables = {k: dataset[k] for k in requested_var_names}
 
     current_spec_coords = jax.tree.leaves(
-        observation_specs, is_leaf=is_coordinate
+        observation_specs, is_leaf=is_coord_primitive
     )
     additional_coord_types = [type(x) for x in current_spec_coords]
     if not strict_matches:

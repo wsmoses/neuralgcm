@@ -521,7 +521,8 @@ def from_xarray(
     coord_types: sequence of coordax.Coordinate subclasses with `from_xarray`
       methods defined. The first coordinate class that returns a coordinate
       object (indicating a match) will be used. By default, coordinates will use
-      only generic coordax.LabeledAxis objects.
+      only generic coordax.LabeledAxis objects. CardesianProduct type is omitted
+      from this sequence since it is introduced by the compose() method.
 
   Returns:
     A coordax.Coordinate object representing the coordinates of the input
@@ -542,6 +543,8 @@ def from_xarray(
   def get_next_match():
     reasons = []
     for coord_type in coord_types:
+      if coord_type == CartesianProduct:
+        continue
       result = coord_type.from_xarray(dims, data_array.coords)
       if isinstance(result, Coordinate):
         return result

@@ -14,6 +14,7 @@
 """Tests utilities for converting between xarray and coordax objects."""
 
 import collections
+import dataclasses
 
 from absl.testing import absltest
 from absl.testing import parameterized
@@ -32,6 +33,31 @@ def _maybe_isel(ds: xarray.Dataset, **indexers: slice):
     return ds.isel(**indexers)
   else:
     return ds
+
+
+@jax.tree_util.register_static
+@dataclasses.dataclass(frozen=True)
+class CustomCoord(cx.Coordinate):
+  """Dummy custom coordinate class to test utilities against."""
+
+  sz: int
+
+  @property
+  def dims(self):
+    return ('custom_dim',)
+
+  @property
+  def shape(self) -> tuple[int, ...]:
+    return (self.sz,)
+
+  @property
+  def fields(self):
+    return {'pi': cx.wrap((np.pi*np.ones(self.sz))**np.arange(self.sz), self)}
+
+  @classmethod
+  def from_xarray(cls, dims: tuple[str, ...], coords: xarray.Coordinates):
+    dim = dims[0]
+    return cls(sz=coords[dim].size)
 
 
 class ReadFieldsFromXarrayTest(parameterized.TestCase):
@@ -105,6 +131,19 @@ class ReadFieldsFromXarrayTest(parameterized.TestCase):
         },
     }
     actual = xarray_utils.read_fields_from_xarray(self.mock_data, input_specs)
+    self.assert_data_and_specs_keys_match(actual, input_specs)
+
+  def test_read_fields_from_xarray_new_coord_type(self):
+    """Tests that read_fields_from_xarray works with new coordinate types."""
+    custom_axis = CustomCoord(sz=3)
+    coords = cx.compose_coordinates(custom_axis, self.grid)
+    ones_like = lambda coord: cx.wrap(np.ones(coord.shape), coord)
+    a_b_vars = {'a': ones_like(coords), 'b': ones_like(custom_axis)}
+    mock_data = {
+        'data': xarray.Dataset({k: v.to_xarray() for k, v in a_b_vars.items()})
+    }
+    input_specs = {'data': {'a': coords, 'b': CustomCoord(sz=3)}}
+    actual = xarray_utils.read_fields_from_xarray(mock_data, input_specs)
     self.assert_data_and_specs_keys_match(actual, input_specs)
 
   def test_read_sharded_fields_from_xarray(self):

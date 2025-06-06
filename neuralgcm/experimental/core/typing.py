@@ -38,13 +38,21 @@ Dtype = jax.typing.DTypeLike | Any
 Numeric = float | int | Array
 PRNGKeyArray = jax.Array
 ShapeDtypeStruct = jax.ShapeDtypeStruct
-ShapeFloatStruct = functools.partial(ShapeDtypeStruct, dtype=jnp.float32)
 Timestep = np.timedelta64 | float
 TimedeltaLike = str | np.timedelta64 | pd.Timestamp | datetime.timedelta
+ShapeFloatStruct = functools.partial(ShapeDtypeStruct, dtype=jnp.float32)
 Quantity = scales.Quantity
 
 #
-# Generic API input/output types.
+# Main structured API types.
+#
+Prognostics = dict[str, cx.Field]
+Observation = dict[str, dict[str, cx.Field]]
+Query = dict[str, dict[str, cx.Coordinate | cx.Field]]
+
+
+#
+# Generic unstructured input/output types.
 #
 Pytree = Any
 PyTreeState = TypeVar('PyTreeState')
@@ -54,11 +62,6 @@ PyTreeState = TypeVar('PyTreeState')
 # Simulation function signatures.
 #
 StepFn = Callable[[PyTreeState], PyTreeState]
-PostProcessFn = Callable[..., Pytree]
-
-
-Query = dict[str, dict[str, cx.Coordinate | cx.Field]]
-Observation = dict[str, dict[str, cx.Field]]
 
 
 @tree_math.struct
@@ -95,12 +98,6 @@ class Randomness:
   def tree_unflatten(cls, aux_data, leaves):
     """Unflattens Randomness from aux_data and leaves."""
     return cls(*leaves, *aux_data)
-
-
-#
-# API function signatures.
-#
-PostProcessFn = Callable[..., Any]
 
 
 #

@@ -79,32 +79,32 @@ class ForecastSystem(nnx.Module, abc.ABC):
   @abc.abstractmethod
   def assimilate_prognostics(
       self,
-      observations: typing.Pytree,
-      dynamic_inputs: typing.Pytree | None = None,
+      observations: typing.Observation,
+      dynamic_inputs: typing.Observation | None = None,
       rng: typing.PRNGKeyArray | None = None,
       initial_state: typing.ModelState | None = None,
-  ) -> typing.Pytree:
+  ) -> typing.Prognostics:
     raise NotImplementedError()
 
   @abc.abstractmethod
   def advance_prognostics(
-      self, prognostics: typing.PyTreeState
-  ) -> typing.PyTreeState:
+      self, prognostics: typing.Prognostics
+  ) -> typing.Prognostics:
     raise NotImplementedError()
 
   @abc.abstractmethod
   def observe_from_prognostics(
       self,
-      prognostics: typing.Pytree,
-      query: typing.Pytree,
-      dynamic_inputs: typing.Pytree | None = None,
-  ) -> typing.Pytree:
+      prognostics: typing.Prognostics,
+      query: typing.Query,
+      dynamic_inputs: typing.Observation | None = None,
+  ) -> typing.Observation:
     raise NotImplementedError()
 
   def assimilate(
       self,
-      observations: typing.Pytree,
-      dynamic_inputs: typing.Pytree | None = None,
+      observations: typing.Observation,
+      dynamic_inputs: typing.Observation | None = None,
       rng: typing.PRNGKeyArray | None = None,
       initial_state: typing.ModelState | None = None,
   ) -> typing.ModelState:
@@ -132,9 +132,9 @@ class ForecastSystem(nnx.Module, abc.ABC):
   def observe(
       self,
       state: typing.ModelState,
-      query: typing.Pytree,
-      dynamic_inputs: typing.Pytree | None = None,
-  ) -> typing.Pytree:
+      query: typing.Query,
+      dynamic_inputs: typing.Observation | None = None,
+  ) -> typing.Observation:
     self.update_dynamic_inputs(dynamic_inputs)
     nnx.update(self, state.diagnostics)
     nnx.update(self, state.randomness)
@@ -151,6 +151,8 @@ class ForecastSystem(nnx.Module, abc.ABC):
     modules = module_utils.retrieve_subclass_modules(
         self, random_processes.RandomProcessModule
     )
+    if not modules:
+      return
     rngs = jax.random.split(rng, len(modules))
     for random_process, key in zip(modules, rngs):
       random_process.unconditional_sample(key)

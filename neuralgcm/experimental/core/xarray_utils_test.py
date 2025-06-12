@@ -139,10 +139,18 @@ class ReadFieldsFromXarrayTest(parameterized.TestCase):
     coords = cx.compose_coordinates(custom_axis, self.grid)
     ones_like = lambda coord: cx.wrap(np.ones(coord.shape), coord)
     a_b_vars = {'a': ones_like(coords), 'b': ones_like(custom_axis)}
+    c_d_vars = {'c': ones_like(cx.Scalar()), 'd': ones_like(custom_axis)}
+    e_f_vars = {'e': ones_like(coords), 'f': ones_like(cx.Scalar())}
     mock_data = {
-        'data': xarray.Dataset({k: v.to_xarray() for k, v in a_b_vars.items()})
+        'ab': xarray.Dataset({k: v.to_xarray() for k, v in a_b_vars.items()}),
+        'cd': xarray.Dataset({k: v.to_xarray() for k, v in c_d_vars.items()}),
+        'ef': xarray.Dataset({k: v.to_xarray() for k, v in e_f_vars.items()}),
     }
-    input_specs = {'data': {'a': coords, 'b': CustomCoord(sz=3)}}
+    input_specs = {
+        'ab': {'a': coords, 'b': CustomCoord(sz=3)},
+        'cd': {'c': cx.Scalar(), 'd': CustomCoord(sz=3)},
+        'ef': {'e': coords, 'f': cx.Scalar()},
+    }
     actual = xarray_utils.read_fields_from_xarray(mock_data, input_specs)
     self.assert_data_and_specs_keys_match(actual, input_specs)
 

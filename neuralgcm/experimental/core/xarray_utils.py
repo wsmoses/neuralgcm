@@ -165,7 +165,7 @@ def read_fields_from_xarray(
   """
   is_coordinate = lambda x: isinstance(x, cx.Coordinate)
   is_cartesian_prod = lambda x: isinstance(x, cx.CartesianProduct)
-  is_coord_primitive = lambda x: is_coordinate(x) and not is_cartesian_prod(x)
+  unfold_products = lambda x: x.coordinates if is_cartesian_prod(x) else x
   result = {}
 
   for source, observation_specs in input_specs.items():
@@ -185,11 +185,11 @@ def read_fields_from_xarray(
       )
 
     variables = {k: dataset[k] for k in requested_var_names}
-
-    current_spec_coords = jax.tree.leaves(
-        observation_specs, is_leaf=is_coord_primitive
+    unfolded = jax.tree.map(  # unpack product coords to catch all coord types.
+        unfold_products, observation_specs, is_leaf=is_coordinate
     )
-    additional_coord_types = [type(x) for x in current_spec_coords]
+    current_spec_coords = jax.tree.leaves(unfolded, is_leaf=is_coordinate)
+    additional_coord_types = list(set([type(x) for x in current_spec_coords]))
     if not strict_matches:
       additional_coord_types += [cx.LabeledAxis]
 

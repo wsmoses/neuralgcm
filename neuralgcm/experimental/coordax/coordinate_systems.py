@@ -543,7 +543,7 @@ def from_xarray(
   def get_next_match():
     reasons = []
     for coord_type in coord_types:
-      if coord_type == CartesianProduct:
+      if coord_type == CartesianProduct or coord_type == Scalar:
         continue
       result = coord_type.from_xarray(dims, data_array.coords)
       if isinstance(result, Coordinate):

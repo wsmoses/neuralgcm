@@ -31,6 +31,7 @@ from neuralgcm.experimental.coordax.coordinate_systems import (
 from neuralgcm.experimental.coordax.fields import (
     Field as Field,
     is_field as is_field,
+    tmp_axis_name as tmp_axis_name,
     cmap as cmap,
     get_coordinate as get_coordinate,
     wrap_like as wrap_like,

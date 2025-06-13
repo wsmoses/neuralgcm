@@ -22,7 +22,6 @@ from __future__ import annotations
 import collections
 import functools
 import operator
-import textwrap
 from typing import Any, Callable, Literal, Self, TypeAlias, TypeGuard, TypeVar
 
 import jax
@@ -68,6 +67,16 @@ def _axes_attrs(field: Field) -> str:
 
   coord_names = {k: _coord_name(c) for k, c in field.axes.items()}
   return '{' + ', '.join(f'{k!r}: {v}' for k, v in coord_names.items()) + '}'
+
+
+def tmp_axis_name(field: Field, excluded_names: set[str] | None = None) -> str:
+  """Returns axis name that is not present in `field` or `excluded_names`."""
+  excluded_names = excluded_names or set()
+  for i in range(field.ndim + len(excluded_names) + 1):
+    name = f'tmp_axis_{i}'
+    if name not in excluded_names and name not in field.named_dims:
+      return name
+  assert False  # unreachable
 
 
 @utils.export

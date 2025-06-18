@@ -162,8 +162,11 @@ def build_sampling_slices(
   """Create slice objects for sampling with a Stencil.
 
   Args:
-    source_points: data coordinates at which the source data is defined.
-    sample_origins: data coordinate corresponding to origin of sample stencils.
+    source_points: data coordinates at which the source data is defined. These
+      must be evenly spaced.
+    sample_origins: data coordinates corresponding to origin of sample stencils.
+      These must be in order and match items from source_points. It is
+      permisissable for sample_origins to contain arbitrary gaps.
     stencil: stencil objects that define the shape of a sample.
 
   Returns:
@@ -210,6 +213,7 @@ def build_sampling_slices(
         f' {sample_origins[-1] + stencil.points} vs {source_points[-1]}'
     )
   if stencil.includes_stop:
+    # Add 1 since the slice end should be past the desired stop point
     stops += 1
 
   stride = _divide_evenly(stencil.step, source_step).item()
@@ -223,8 +227,20 @@ def build_sampling_slices(
 def valid_origin_points(
     source_points: np.typing.ArrayLike, stencil: Stencil
 ) -> np.ndarray:
-  """Get all possible sample origins for a given stencil."""
+  """Get all possible sample origins for a given stencil.
 
+  This trims the ends of the returned sample origin points to ensure that all
+  samples fit within the range defined by source_points.
+
+  Args:
+    source_points: data coordinates at which the source data is defined. These
+      must be evenly spaced.
+    stencil: stencil objects that define the shape of a sample.
+
+  Returns:
+    An array of sample origins that meet the constraints set by
+    source_points and stencil.
+  """
   source_points = np.asarray(source_points)
 
   min_origin = source_points[0] - stencil.start

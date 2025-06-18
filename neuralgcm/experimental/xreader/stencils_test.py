@@ -128,6 +128,12 @@ class StencilsTest(parameterized.TestCase):
           expected=[slice(1, 2, 1), slice(3, 4, 1)],
       ),
       dict(
+          source_points=[0, 1, 2, 3, 4, 5, 6, 7, 8],
+          sample_origins=[1, 2, 5],
+          stencil=stencils.Stencil(start=-1, stop=1, step=1, closed='neither'),
+          expected=[slice(1, 2, 1), slice(2, 3, 1), slice(5, 6, 1)],
+      ),
+      dict(
           source_points=[0, 2, 4, 6, 8],
           sample_origins=[2, 6],
           stencil=stencils.Stencil(start=-2, stop=2, step=2, closed='both'),
@@ -138,6 +144,39 @@ class StencilsTest(parameterized.TestCase):
           sample_origins=[2],
           stencil=stencils.Stencil(start=-2, stop=4, step=2, closed='left'),
           expected=[slice(0, 6, 2)],
+      ),
+      dict(
+          source_points=np.arange(0, 200, 4),
+          sample_origins=[4, 8, 104, 108],
+          stencil=stencils.Stencil(start=-4, stop=20, step=8, closed='left'),
+          expected=[
+              slice(0, 6, 2),
+              slice(1, 7, 2),
+              slice(25, 31, 2),
+              slice(26, 32, 2),
+          ],
+      ),
+      dict(
+          source_points=np.arange(0, 10, 1),
+          sample_origins=[0, 3],
+          stencil=stencils.Stencil(start=2, stop=4, step=1, closed='both'),
+          expected=[slice(2, 5, 1), slice(5, 8, 1)],
+      ),
+      dict(
+          source_points=np.arange(
+              '2020-01-01', '2020-01-02', dtype='datetime64[h]'
+          ),
+          sample_origins=[
+              np.datetime64('2020-01-01T02'),
+              np.datetime64('2020-01-01T06'),
+          ],
+          stencil=stencils.Stencil(
+              start=np.timedelta64(-1, 'h'),
+              stop=np.timedelta64(2, 'h'),
+              step=np.timedelta64(1, 'h'),
+              closed='both',
+          ),
+          expected=[slice(1, 5, 1), slice(5, 9, 1)],
       ),
   )
   def test_build_sampling_slices(
@@ -253,6 +292,20 @@ class StencilsTest(parameterized.TestCase):
           source_points=[0, 1, 2, 3, 4],
           stencil=stencils.Stencil(start=-1, stop=1, step=1, closed='neither'),
           expected=[0, 1, 2, 3, 4],
+      ),
+      dict(
+          source_points=np.arange(
+              '2020-01-01', '2020-01-02', dtype='datetime64[h]'
+          ),
+          stencil=stencils.Stencil(
+              start=np.timedelta64(-2, 'h'),
+              stop=np.timedelta64(3, 'h'),
+              step=np.timedelta64(1, 'h'),
+              closed='both',
+          ),
+          expected=np.arange(
+              '2020-01-01T02', '2020-01-01T21', dtype='datetime64[h]'
+          ),
       ),
   )
   def test_valid_origin_points(self, source_points, stencil, expected):

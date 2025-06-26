@@ -26,3 +26,5 @@ from neuralgcm.experimental.jax_solar._jax_solar import (
     normalized_radiation_flux as normalized_radiation_flux,
     radiation_flux as radiation_flux,
 )
+
+__version__ = "0.1.0"  # keep sync with pyproject.toml

@@ -39,7 +39,8 @@ dependencies = [
 ]
 
 [project.urls]
-source-code = "https://github.com/neuralgcm/neuralgcm"
+source = "https://github.com/neuralgcm/neuralgcm"
+documentation = "https://neuralgcm.readthedocs.io"
 
 [project.optional-dependencies]
 tests = [

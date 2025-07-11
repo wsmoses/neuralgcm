@@ -19,10 +19,10 @@ import functools
 from absl.testing import absltest
 from absl.testing import parameterized
 import chex
+import coordax as cx
 from flax import nnx
 import jax
 import jax_datetime as jdt
-from neuralgcm.experimental import coordax as cx
 from neuralgcm.experimental.core import boundaries
 from neuralgcm.experimental.core import coordinates
 from neuralgcm.experimental.core import feature_transforms
@@ -113,7 +113,7 @@ class ForwardTowerTransformTest(parameterized.TestCase):
         input_shapes=input_shapes,
         targets=embedding_coords,
         tower_factory=self.tower_factory,
-        dims_to_align=(self.levels, self.grid,),
+        dims_to_align=(self.levels, self.grid),
         mesh=self.mesh,
         rngs=nnx.Rngs(0),
     )

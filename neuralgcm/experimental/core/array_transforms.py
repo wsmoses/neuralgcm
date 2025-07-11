@@ -61,7 +61,8 @@ class Clip():
     self.max_val = max_val
 
   def __call__(self, x: jax.Array) -> jax.Array:
-    return jnp.clip(x, a_min=self.min_val, a_max=self.max_val)
+    return jnp.clip(x, min=self.min_val, max=self.max_val)
+
 
 class Logit():
   """wrapper around jax.scipy.special.logit."""

@@ -238,7 +238,7 @@ class LearnedExponentialFilter(hk.Module):
     a = jax.nn.softplus(a_logit)
     p = jax.nn.softplus(p_logit)
     c = jax.nn.sigmoid(c_logit)
-    filter_fn = filtering.exponential_filter(self.coords.horizontal, a, p, c)
+    filter_fn = filtering.exponential_filter(self.coords.horizontal, a, p, c)  # pytype: disable=wrong-arg-types  # jax-nn-types
     return filter_fn(u_next)
 
 

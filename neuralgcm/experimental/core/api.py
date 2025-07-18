@@ -112,8 +112,8 @@ class ForecastSystem(nnx.Module, abc.ABC):
     self.initialize_random_processes(rng)
     self.reset_diagnostic_state()
     prognostics = self.assimilate_prognostics(observations, initial_state)
-    diagnostic = nnx.state(self, diagnostics.DiagnosticValue)
-    randomness = nnx.state(self, random_processes.RandomnessValue)
+    diagnostic = nnx.clone(nnx.state(self, diagnostics.DiagnosticValue))
+    randomness = nnx.clone(nnx.state(self, random_processes.RandomnessValue))
     return typing.ModelState(prognostics, diagnostic, randomness)
 
   def advance(
@@ -125,8 +125,8 @@ class ForecastSystem(nnx.Module, abc.ABC):
     nnx.update(self, state.diagnostics)
     nnx.update(self, state.randomness)
     prognostics = self.advance_prognostics(state.prognostics)
-    diagnostic = nnx.state(self, diagnostics.DiagnosticValue)
-    randomness = nnx.state(self, random_processes.RandomnessValue)
+    diagnostic = nnx.clone(nnx.state(self, diagnostics.DiagnosticValue))
+    randomness = nnx.clone(nnx.state(self, random_processes.RandomnessValue))
     return typing.ModelState(prognostics, diagnostic, randomness)
 
   def observe(
@@ -204,8 +204,8 @@ class ForecastSystem(nnx.Module, abc.ABC):
     def _step(model_and_state):
       model, model_state = model_and_state
       model, next_prognostics = inner_step((model, model_state.prognostics))
-      diagnostic = nnx.state(model, diagnostics.DiagnosticValue)
-      randomness = nnx.state(model, random_processes.RandomnessValue)
+      diagnostic = nnx.clone(nnx.state(model, diagnostics.DiagnosticValue))
+      randomness = nnx.clone(nnx.state(model, random_processes.RandomnessValue))
       next_model_state = typing.ModelState(
           next_prognostics, diagnostic, randomness
       )

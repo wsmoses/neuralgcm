@@ -32,7 +32,7 @@ dependencies = [
     "numpy",
     "optax",
     "pandas",
-    "tensorflow_probability",
+    "tfp-nightly@git+https://github.com/tensorflow/probability@303e844fd6e80202410932fd52570850a5957500",
     "xarray",
 ]
 
